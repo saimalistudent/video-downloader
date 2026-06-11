@@ -1,0 +1,11 @@
+# Omni Downloader — replace omnidownloader.com with your live Hostinger domain if different
+User-agent: *
+Allow: /
+
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+Sitemap: https://omnidownloader.com/sitemap.xml

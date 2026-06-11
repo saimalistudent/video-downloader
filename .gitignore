@@ -1,0 +1,9 @@
+.env
+.env.local
+__pycache__/
+*.pyc
+.vercel/
+.DS_Store
+Thumbs.db
+_vercel_zip_staging/
+*.zip

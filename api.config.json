@@ -1,0 +1,11 @@
+{
+  "locked": true,
+  "provider": "social-download-all-in-one",
+  "host": "social-download-all-in-one.p.rapidapi.com",
+  "method": "POST",
+  "path": "/v1/social/autolink",
+  "body_key": "url",
+  "platforms": ["tiktok", "instagram", "facebook", "youtube"],
+  "max_concurrent_requests": 4,
+  "note": "Production API — do not change without updating RESTORE.md"
+}
