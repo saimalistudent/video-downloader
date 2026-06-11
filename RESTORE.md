@@ -18,7 +18,7 @@ Current mode: `social-download-all-in-one.p.rapidapi.com` → `POST /v1/social/a
 | Instagram | `instagram-reels-downloader-api.p.rapidapi.com` | `/download` | `url` |
 | Facebook/YouTube | `instagram-reels-downloader-api.p.rapidapi.com` | `/download` | `url` |
 
-**API Key:** `9f214da627msh1ca7d87de51d29ep148f14jsnc06557bf84fa`
+**API Key:** set via `RAPIDAPI_KEY` environment variable (never commit to git)
 
 ## Git restore
 

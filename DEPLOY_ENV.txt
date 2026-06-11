@@ -1,0 +1,25 @@
+Omni Downloader — Netlify Deploy
+=================================
+
+DO NOT use Netlify Drop (drag-and-drop) — it cannot run the download API.
+
+DEPLOY STEPS:
+-------------
+1. Double-click DEPLOY-NETLIFY.bat
+2. Log in to Netlify when browser opens
+3. After deploy → Site settings → Environment variables:
+     RAPIDAPI_KEY = your key from rapidapi.com/developer/security
+4. Subscribe to: https://rapidapi.com/aiovod/api/social-download-all-in-one
+5. Deploys → Trigger deploy (required after env var change)
+
+VERIFY:
+-------
+Open: https://YOUR-SITE.netlify.app/api/health
+Should show: "api_configured": true, "key_length": 50
+
+LOCAL TEST (before deploy):
+---------------------------
+node scripts/test-api.js
+(requires .env with RAPIDAPI_KEY)
+
+Full guide: NETLIFY_DEPLOY.md

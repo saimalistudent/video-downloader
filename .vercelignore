@@ -1,0 +1,11 @@
+serve.py
+requirements.txt
+lib/proxy.py
+START.bat
+deploy-netlify.ps1
+DEPLOY-NETLIFY.bat
+netlify/
+__pycache__/
+*.pyc
+.env
+.git/

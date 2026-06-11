@@ -1,8 +1,11 @@
 {
   "version": 2,
   "name": "omni-downloader",
+  "framework": null,
+  "buildCommand": null,
+  "installCommand": null,
   "functions": {
-    "api/**/*.py": {
+    "api/**/*.js": {
       "maxDuration": 60
     }
   },

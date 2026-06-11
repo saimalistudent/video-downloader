@@ -1,0 +1,7 @@
+{
+  "name": "omni-downloader",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -8,7 +8,9 @@
 4. **Environment Variables** (required):
    - `RAPIDAPI_KEY` = your RapidAPI key
    - `MAX_API_SLOTS` = `4` (optional)
-5. Click **Deploy**
+5. Click **Deploy** (Node.js — no Python, no build step)
+
+**Note:** Do not include `serve.py` or `requirements.txt` — backend is `api/*.js` only.
 
 ## After domain (Hostinger)
 
@@ -30,8 +32,10 @@ vercel dev
 | Path | Purpose |
 |------|---------|
 | `index.html` | Frontend |
-| `api/*.py` | Serverless API (download, stream, health) |
-| `lib/proxy.py` | RapidAPI proxy logic |
+| `api/download.js` | Secure POST proxy — RapidAPI key in env only |
+| `api/stream.js` | Video/audio file stream proxy |
+| `lib/api-proxy.js` | Shared server-side RapidAPI logic |
+| `netlify.toml` + `netlify/functions/` | Netlify deploy support |
 | `vercel.json` | Vercel config |
 | `robots.txt`, `sitemap.xml` | SEO |
 

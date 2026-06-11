@@ -1,3 +1,4 @@
+node_modules/
 .env
 .env.local
 __pycache__/
@@ -6,4 +7,5 @@ __pycache__/
 .DS_Store
 Thumbs.db
 _vercel_zip_staging/
+_netlify_zip_stage/
 *.zip

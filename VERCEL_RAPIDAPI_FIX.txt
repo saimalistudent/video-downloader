@@ -1,0 +1,48 @@
+FIX: Invalid RapidAPI key on Vercel
+====================================
+
+Your key IS reaching Vercel, but RapidAPI is rejecting it (403).
+Follow ALL steps below:
+
+STEP 1 — Get a NEW key
+----------------------
+1. Open: https://rapidapi.com/developer/security
+2. Click "Generate New Key" (or copy existing Application Key)
+3. Copy the FULL key (about 50 characters, no spaces)
+
+STEP 2 — Subscribe to the CORRECT API (required!)
+-------------------------------------------------
+1. Open: https://rapidapi.com/aiovod/api/social-download-all-in-one
+2. Click "Subscribe to Test" (free Basic plan is fine)
+3. Without this subscription, downloads will NOT work
+
+STEP 3 — Set key on Vercel
+--------------------------
+1. Vercel → Your Project → Settings → Environment Variables
+2. Name:  RAPIDAPI_KEY
+3. Value: paste key ONLY (no quotes, no spaces before/after)
+4. Enable: Production + Preview + Development (all three)
+5. Save
+
+STEP 4 — REDEPLOY (mandatory!)
+------------------------------
+Env vars do NOT apply to old deploys.
+Vercel → Deployments → ... menu → Redeploy
+
+STEP 5 — Verify
+---------------
+Open in browser:
+  https://YOUR-SITE.vercel.app/api/health
+
+You should see:
+  "api_configured": true
+  "key_length": 50   (approx)
+
+If key_length is 0 → env var not loaded → redeploy again.
+
+If still failing → generate a brand new RapidAPI key and repeat.
+
+Your key to use (from local .env):
+9f214da627msh1ca7d87de51d29ep148f14jsnc06557bf84fa
+
+If this key still fails, it is expired — create a new one on RapidAPI.

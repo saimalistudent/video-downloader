@@ -1,7 +1,7 @@
 {
-  "name": "Omni Downloader",
-  "short_name": "Omni",
-  "description": "Free all-in-one video downloader for TikTok, Instagram Reels, Facebook, and YouTube. HD MP4 and MP3.",
+  "name": "Omni Downloader — TikTok, Instagram, Facebook & YouTube Video Downloader Without Watermark",
+  "short_name": "Omni Downloader",
+  "description": "Free all-in-one video downloader for TikTok, Instagram, Facebook, and YouTube without watermark. HD MP4 and MP3 downloads.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0a0f",
@@ -9,13 +9,13 @@
   "lang": "en",
   "icons": [
     {
-      "src": "/icon.svg",
+      "src": "/icon.svg?v=3",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "/favicon.svg",
+      "src": "/favicon.svg?v=3",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "maskable"

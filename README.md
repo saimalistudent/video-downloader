@@ -2,14 +2,22 @@
 
 Free all-in-one video downloader for **TikTok** (no watermark), **Instagram Reels**, **Facebook**, and **YouTube**. Download HD **MP4** or **MP3** in your browser.
 
-## Deploy on Vercel
+## Deploy on Vercel or Netlify
 
-1. Fork or import this repo on [Vercel](https://vercel.com)
-2. Add environment variable: `RAPIDAPI_KEY` = your RapidAPI key
-3. Optional: `MAX_API_SLOTS=4`
-4. Deploy
+**Your RapidAPI key is never exposed to the browser.** It lives only in serverless functions (`api/*.js`) via `process.env.RAPIDAPI_KEY`.
 
-See [VERCEL_DEPLOY.md](./VERCEL_DEPLOY.md) for full instructions.
+### Vercel
+1. Import this repo on [Vercel](https://vercel.com)
+2. Environment variable: `RAPIDAPI_KEY` = your RapidAPI key
+3. Deploy — functions auto-map to `/api/download`, `/api/stream`, etc.
+
+### Netlify
+1. Import repo on [Netlify](https://netlify.com)
+2. Build command: *(leave empty)* | Publish directory: `.`
+3. Environment variable: `RAPIDAPI_KEY`
+4. `netlify.toml` redirects `/api/*` to serverless functions
+
+See [VERCEL_DEPLOY.md](./VERCEL_DEPLOY.md) for details.
 
 ## Local development
 
