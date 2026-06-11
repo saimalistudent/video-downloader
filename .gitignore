@@ -9,3 +9,6 @@ Thumbs.db
 _vercel_zip_staging/
 _netlify_zip_stage/
 *.zip
+
+# Local Netlify folder
+.netlify

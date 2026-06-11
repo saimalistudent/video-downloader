@@ -1,4 +1,4 @@
-# Omni Downloader — replace omnidownloader.com with your live Hostinger domain if different
+# Omni Downloader — https://omnidownloader.netlify.app
 User-agent: *
 Allow: /
 
@@ -8,4 +8,4 @@ Allow: /
 User-agent: Bingbot
 Allow: /
 
-Sitemap: https://omnidownloader.com/sitemap.xml
+Sitemap: https://omnidownloader.netlify.app/sitemap.xml

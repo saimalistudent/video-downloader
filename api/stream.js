@@ -36,7 +36,24 @@ module.exports = async function handler(req, res) {
     });
 
     if (!upstream.ok) {
+      if (upstream.status === 403 || upstream.status === 401) {
+        return sendJson(res, 403, {
+          error: 'Download not allowed',
+          message: 'The admin / creator has not allowed downloading this video.',
+        });
+      }
       return sendJson(res, upstream.status, { error: `Upstream HTTP ${upstream.status}` });
+    }
+
+    const MAX_PROXY_BYTES = 4 * 1024 * 1024;
+    const contentLengthHeader = upstream.headers.get('content-length');
+    if (contentLengthHeader && parseInt(contentLengthHeader, 10) > MAX_PROXY_BYTES) {
+      return sendJson(res, 413, {
+        error: 'Video too large for server proxy',
+        message: 'Opening direct download…',
+        direct_url: mediaUrl,
+        use_direct: true,
+      });
     }
 
     await incrementDownloadCount();
@@ -44,6 +61,15 @@ module.exports = async function handler(req, res) {
     const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
     const contentLength = upstream.headers.get('content-length');
     const buffer = Buffer.from(await upstream.arrayBuffer());
+
+    if (buffer.length > MAX_PROXY_BYTES) {
+      return sendJson(res, 413, {
+        error: 'Video too large for server proxy',
+        message: 'Opening direct download…',
+        direct_url: mediaUrl,
+        use_direct: true,
+      });
+    }
 
     cors(res);
     res.status(200);

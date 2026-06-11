@@ -3,5 +3,9 @@
   "private": true,
   "engines": {
     "node": ">=18"
+  },
+  "scripts": {
+    "dev": "npx netlify-cli dev --port 8080",
+    "test:api": "node scripts/test-api.js"
   }
 }

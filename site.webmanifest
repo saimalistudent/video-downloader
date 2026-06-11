@@ -2,23 +2,32 @@
   "name": "Omni Downloader — TikTok, Instagram, Facebook & YouTube Video Downloader Without Watermark",
   "short_name": "Omni Downloader",
   "description": "Free all-in-one video downloader for TikTok, Instagram, Facebook, and YouTube without watermark. HD MP4 and MP3 downloads.",
-  "start_url": "/",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait-primary",
   "background_color": "#0a0a0f",
   "theme_color": "#0a0a0f",
   "lang": "en",
+  "categories": ["utilities", "productivity"],
   "icons": [
     {
-      "src": "/icon.svg?v=3",
-      "sizes": "any",
+      "src": "/icon.svg?v=6",
+      "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "/favicon.svg?v=3",
-      "sizes": "any",
+      "src": "/icon.svg?v=6",
+      "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "maskable"
+    },
+    {
+      "src": "/favicon.svg?v=6",
+      "sizes": "64x64",
+      "type": "image/svg+xml",
+      "purpose": "any"
     }
   ]
 }
