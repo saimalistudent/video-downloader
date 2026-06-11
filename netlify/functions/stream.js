@@ -32,7 +32,11 @@ exports.handler = async (event) => {
       return jsonResponse(upstream.status, { error: `Upstream HTTP ${upstream.status}` });
     }
 
-    await incrementDownloadCount();
+    try {
+      await incrementDownloadCount();
+    } catch (err) {
+      console.error('[stream] stats increment skipped:', err.message);
+    }
 
     const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
     const contentLength = upstream.headers.get('content-length');

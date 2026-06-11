@@ -14,6 +14,15 @@ module.exports = async function handler(req, res) {
     const stats = await getDownloadCount();
     return sendJson(res, 200, stats);
   } catch (err) {
-    return sendJson(res, 500, { error: `Stats error: ${err.message}` });
+    console.error('[stats] unhandled error:', err);
+    return sendJson(res, 200, {
+      total: 0,
+      verified: true,
+      persistent: false,
+      live: false,
+      storage: 'none',
+      warning: 'Stats temporarily unavailable',
+      message: err.message || String(err),
+    });
   }
 };
