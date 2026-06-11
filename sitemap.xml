@@ -1,17 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://omnidownloader.com/</loc>
-    <lastmod>2026-06-10</lastmod>
-    <changefreq>weekly</changefreq>
+    <loc>https://omnidownloader.netlify.app/</loc>
+    <lastmod>2026-06-11</lastmod>
     <priority>1.0</priority>
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://omnidownloader.com/"/>
-    <xhtml:link rel="alternate" hreflang="en" href="https://omnidownloader.com/"/>
-    <xhtml:link rel="alternate" hreflang="en-US" href="https://omnidownloader.com/"/>
-    <xhtml:link rel="alternate" hreflang="en-GB" href="https://omnidownloader.com/"/>
-    <xhtml:link rel="alternate" hreflang="en-CA" href="https://omnidownloader.com/"/>
-    <xhtml:link rel="alternate" hreflang="en-AE" href="https://omnidownloader.com/"/>
-    <xhtml:link rel="alternate" hreflang="en-SA" href="https://omnidownloader.com/"/>
   </url>
 </urlset>
