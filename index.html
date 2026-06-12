@@ -6,7 +6,7 @@
 
   <!-- ═══════════════════════════════════════════════════════════════════════
        SEO — Live site: https://omnidownloader.netlify.app
-       After deploy: upload og-image.jpg (1200×630) and submit sitemap in Google Search Console
+       After deploy: submit sitemap in Google Search Console
        ═══════════════════════════════════════════════════════════════════════ -->
 
   <!-- Primary Meta Tags (Global) -->
@@ -53,8 +53,8 @@
   <meta property="og:locale:alternate" content="en_GB">
   <meta property="og:locale:alternate" content="en_CA">
   <meta property="og:locale:alternate" content="en_AE">
-  <meta property="og:image" content="https://omnidownloader.netlify.app/icon.svg">
-  <meta property="og:image:secure_url" content="https://omnidownloader.netlify.app/icon.svg">
+  <meta property="og:image" content="https://omnidownloader.netlify.app/og-image.jpg">
+  <meta property="og:image:secure_url" content="https://omnidownloader.netlify.app/og-image.jpg">
   <meta property="og:image:type" content="image/jpeg">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
@@ -64,7 +64,7 @@
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Omni Downloader | TikTok, Instagram, Facebook &amp; YouTube Video Downloader Without Watermark">
   <meta name="twitter:description" content="Download TikTok, Instagram, Facebook and YouTube videos without watermark. HD MP4 and MP3 — free and fast.">
-  <meta name="twitter:image" content="https://omnidownloader.netlify.app/icon.svg">
+  <meta name="twitter:image" content="https://omnidownloader.netlify.app/og-image.jpg">
   <meta name="twitter:image:alt" content="Omni Downloader logo and video download tool">
 
   <!-- Performance hints -->
@@ -73,10 +73,11 @@
   <link rel="dns-prefetch" href="https://cdn.tailwindcss.com">
 
   <!-- Icons &amp; PWA -->
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=6">
-  <link rel="apple-touch-icon" href="/icon.svg?v=6">
-  <link rel="apple-touch-icon" sizes="180x180" href="/icon.svg?v=6">
-  <link rel="manifest" href="/site.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=7">
+  <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest?v=7">
 
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -133,7 +134,15 @@
         "name": "Omni Downloader",
         "description": "TikTok, Instagram, Facebook, and YouTube video downloader without watermark. Free HD MP4 and MP3 downloads.",
         "inLanguage": "en",
-        "publisher": { "@id": "https://omnidownloader.netlify.app/#organization" }
+        "publisher": { "@id": "https://omnidownloader.netlify.app/#organization" },
+        "potentialAction": {
+          "@type": "SearchAction",
+          "target": {
+            "@type": "EntryPoint",
+            "urlTemplate": "https://omnidownloader.netlify.app/?q={search_term_string}"
+          },
+          "query-input": "required name=search_term_string"
+        }
       },
       {
         "@type": "Organization",
@@ -142,8 +151,12 @@
         "url": "https://omnidownloader.netlify.app/",
         "logo": {
           "@type": "ImageObject",
-          "url": "https://omnidownloader.netlify.app/icon.svg"
-        }
+          "url": "https://omnidownloader.netlify.app/icon-512.png",
+          "width": 512,
+          "height": 512
+        },
+        "image": "https://omnidownloader.netlify.app/og-image.jpg",
+        "sameAs": []
       },
       {
         "@type": "WebApplication",
@@ -157,8 +170,8 @@
         "description": "Omni Downloader is a free online video downloader for TikTok, Instagram, Facebook, and YouTube without watermark. Download HD MP4 video and MP3 audio in one click. Available worldwide on mobile and desktop browsers.",
         "applicationCategory": "MultimediaApplication",
         "applicationSubCategory": "Video Downloader",
-        "operatingSystem": "Any (Web Browser)",
-        "browserRequirements": "Requires JavaScript. Works on Chrome, Firefox, Safari, and Edge.",
+        "operatingSystem": "Web, Android, iOS, Windows, macOS",
+        "browserRequirements": "Requires JavaScript. Install as PWA for app-like experience.",
         "inLanguage": "en",
         "isAccessibleForFree": true,
         "offers": {
@@ -175,7 +188,8 @@
           "YouTube video downloader",
           "HD MP4 video download",
           "MP3 audio download",
-          "No app installation",
+          "Install as app on phone — auto-updates from website",
+          "PWA — open from home screen without browser",
           "Mobile and desktop support"
         ],
         "publisher": { "@id": "https://omnidownloader.netlify.app/#organization" }
@@ -263,7 +277,7 @@
             "name": "Do I need to install an app?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "No installation is required. Omni Downloader works in any modern mobile or desktop browser — just paste a link and download."
+              "text": "No account or Play Store app is required. You can use Omni Downloader in your browser, or install it as a free PWA app on your phone home screen — it auto-updates when the website updates."
             }
           },
           {
@@ -905,6 +919,104 @@
       }
     }
 
+    .install-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 10050;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.35s ease;
+    }
+
+    .install-modal.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .install-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.72);
+      backdrop-filter: blur(6px);
+    }
+
+    .install-modal-box {
+      position: relative;
+      width: 100%;
+      max-width: 22rem;
+      padding: 1.5rem 1.35rem 1.25rem;
+      border-radius: 1rem;
+      background: linear-gradient(160deg, #1a1a26 0%, #12121a 100%);
+      border: 1px solid rgba(0, 245, 255, 0.22);
+      box-shadow: 0 0 40px rgba(0, 245, 255, 0.12), 0 20px 50px rgba(0, 0, 0, 0.45);
+      text-align: center;
+      transform: translateY(12px) scale(0.98);
+      transition: transform 0.35s ease;
+    }
+
+    .install-modal.show .install-modal-box {
+      transform: translateY(0) scale(1);
+    }
+
+    .install-modal-icon {
+      width: 4rem;
+      height: 4rem;
+      border-radius: 1rem;
+      margin: 0 auto 0.85rem;
+      box-shadow: 0 8px 24px rgba(0, 245, 255, 0.2);
+    }
+
+    .install-modal-title {
+      font-size: 1.125rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 0.45rem;
+    }
+
+    .install-modal-text {
+      font-size: 0.875rem;
+      color: #94a3b8;
+      line-height: 1.5;
+      margin-bottom: 1.1rem;
+    }
+
+    .install-modal-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+
+    .install-modal-btn {
+      width: 100%;
+      padding: 0.72rem 1rem;
+      border-radius: 0.65rem;
+      font-weight: 600;
+      font-size: 0.9375rem;
+      cursor: pointer;
+      border: none;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .install-modal-btn.primary {
+      background: linear-gradient(135deg, #00f5ff 0%, #bf00ff 100%);
+      color: #0a0a0f;
+      box-shadow: 0 4px 18px rgba(0, 245, 255, 0.25);
+    }
+
+    .install-modal-btn.primary:hover {
+      transform: translateY(-1px);
+    }
+
+    .install-modal-btn.ghost {
+      background: transparent;
+      color: #94a3b8;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+
     .blocked-modal .queue-box {
       border-color: rgba(248, 113, 113, 0.35);
       box-shadow: 0 0 40px rgba(248, 113, 113, 0.12);
@@ -969,8 +1081,17 @@
 
     .download-actions {
       display: flex;
-      flex-wrap: wrap;
-      gap: 0.75rem;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0;
+      width: 100%;
+      max-width: 22rem;
+    }
+
+    .btn-download-audio {
+      width: 100%;
+      justify-content: center;
+      margin-top: 0.15rem;
     }
 
     .download-tier-stack {
@@ -1010,18 +1131,20 @@
       opacity: 0.88;
     }
 
-    .tier-badge {
-      position: absolute;
-      top: -0.45rem;
-      right: 0.65rem;
+    .tier-premium-tag {
+      display: inline-block;
+      align-self: flex-start;
       font-size: 0.625rem;
       font-weight: 700;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
-      padding: 0.15rem 0.45rem;
+      padding: 0.2rem 0.55rem;
+      margin-top: 0.35rem;
+      margin-bottom: -0.15rem;
       border-radius: 9999px;
-      background: rgba(255, 255, 255, 0.92);
-      color: #c2410c;
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.35);
     }
 
     .tier-hint {
@@ -1124,63 +1247,184 @@
       border-color: rgba(148, 163, 184, 0.45);
     }
 
-    .seo-tagline {
-      font-size: 0.8125rem;
-      line-height: 1.55;
-      color: #94a3b8;
-      margin-bottom: 0.85rem;
-      padding: 0.7rem 0.9rem;
-      border-radius: 0.625rem;
-      background: linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(0, 245, 255, 0.03));
-      border: 1px solid rgba(99, 102, 241, 0.14);
-      animation: taglineEnter 0.65s ease-out both;
+    .seo-visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
     }
 
-    @keyframes taglineEnter {
-      from {
-        opacity: 0;
-        transform: translateY(8px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
+    .platform-showcase {
+      position: relative;
+      margin-bottom: 1rem;
+      padding: 1.1rem 0.75rem 1rem;
+      border-radius: 1rem;
+      background:
+        radial-gradient(ellipse 80% 60% at 50% 0%, rgba(0, 245, 255, 0.07), transparent 70%),
+        radial-gradient(ellipse 60% 50% at 20% 100%, rgba(191, 0, 255, 0.06), transparent 65%),
+        linear-gradient(135deg, rgba(99, 102, 241, 0.06), rgba(15, 17, 23, 0.95));
+      border: 1px solid rgba(99, 102, 241, 0.18);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      animation: showcaseEnter 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+      overflow: hidden;
     }
 
-    .seo-tagline-text {
-      display: inline;
-      animation: taglineTextIn 0.8s ease-out 0.12s both;
+    .platform-showcase::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(105deg, transparent 40%, rgba(0, 245, 255, 0.04) 50%, transparent 60%);
+      background-size: 200% 100%;
+      animation: showcaseSweep 6s ease-in-out infinite;
+      pointer-events: none;
     }
 
-    @keyframes taglineTextIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
+    @keyframes showcaseEnter {
+      from { opacity: 0; transform: translateY(12px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
     }
 
-    .tagline-kw {
-      color: #cbd5e1;
-      font-weight: 500;
+    @keyframes showcaseSweep {
+      0%, 100% { background-position: 200% 0; }
+      50% { background-position: -200% 0; }
+    }
+
+    .platform-showcase-row {
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      gap: clamp(0.65rem, 3.5vw, 1.35rem);
+      position: relative;
+      z-index: 1;
+    }
+
+    .platform-chip {
+      --chip-glow: rgba(99, 102, 241, 0.45);
+      --chip-ring: rgba(99, 102, 241, 0.55);
+      --chip-bg: rgba(99, 102, 241, 0.08);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.45rem;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      animation: chipPop 0.65s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+      animation-delay: calc(var(--i, 0) * 0.1s + 0.15s);
+    }
+
+    .platform-chip:nth-child(1) { --i: 0; --chip-glow: rgba(0, 245, 255, 0.5); --chip-ring: rgba(0, 245, 255, 0.65); --chip-bg: rgba(0, 245, 255, 0.08); }
+    .platform-chip:nth-child(2) { --i: 1; --chip-glow: rgba(236, 72, 153, 0.5); --chip-ring: rgba(168, 85, 247, 0.6); --chip-bg: rgba(168, 85, 247, 0.08); }
+    .platform-chip:nth-child(3) { --i: 2; --chip-glow: rgba(59, 130, 246, 0.5); --chip-ring: rgba(59, 130, 246, 0.65); --chip-bg: rgba(59, 130, 246, 0.08); }
+    .platform-chip:nth-child(4) { --i: 3; --chip-glow: rgba(239, 68, 68, 0.5); --chip-ring: rgba(239, 68, 68, 0.65); --chip-bg: rgba(239, 68, 68, 0.08); }
+
+    @keyframes chipPop {
+      from { opacity: 0; transform: translateY(18px) scale(0.75); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .platform-chip-ring {
+      position: relative;
+      width: clamp(3.75rem, 14vw, 4.75rem);
+      height: clamp(3.75rem, 14vw, 4.75rem);
+      border-radius: 9999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--chip-bg);
+      border: 2px solid var(--chip-ring);
+      box-shadow:
+        0 0 20px var(--chip-glow),
+        0 0 40px color-mix(in srgb, var(--chip-glow) 40%, transparent),
+        inset 0 0 18px color-mix(in srgb, var(--chip-glow) 25%, transparent);
+      animation: chipFloat 3.2s ease-in-out infinite;
+      animation-delay: calc(var(--i, 0) * 0.45s);
+      transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.35s ease;
+    }
+
+    .platform-chip-ring::before {
+      content: '';
+      position: absolute;
+      inset: -4px;
+      border-radius: inherit;
+      border: 1px solid var(--chip-ring);
+      opacity: 0.35;
+      animation: ringPulse 2.4s ease-in-out infinite;
+      animation-delay: calc(var(--i, 0) * 0.3s);
+    }
+
+    .platform-chip-ring::after {
+      content: '';
+      position: absolute;
+      inset: 6px;
+      border-radius: inherit;
+      background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.12), transparent 55%);
+      pointer-events: none;
+    }
+
+    @keyframes chipFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-6px); }
+    }
+
+    @keyframes ringPulse {
+      0%, 100% { transform: scale(1); opacity: 0.35; }
+      50% { transform: scale(1.08); opacity: 0.65; }
     }
 
     @media (hover: hover) {
-      .tagline-kw {
-        transition: color 0.4s ease;
+      .platform-chip:hover .platform-chip-ring {
+        transform: translateY(-8px) scale(1.08);
+        box-shadow:
+          0 0 28px var(--chip-glow),
+          0 0 56px color-mix(in srgb, var(--chip-glow) 50%, transparent),
+          inset 0 0 22px color-mix(in srgb, var(--chip-glow) 35%, transparent);
       }
-      .seo-tagline:hover .tagline-kw-tiktok { color: #5eead4; }
-      .seo-tagline:hover .tagline-kw-insta { color: #c4b5fd; }
-      .seo-tagline:hover .tagline-kw-fb { color: #93c5fd; }
-      .seo-tagline:hover .tagline-kw-yt { color: #fca5a5; }
+      .platform-chip:active .platform-chip-ring {
+        transform: translateY(-2px) scale(1.02);
+      }
     }
 
-    .tagline-shimmer {
+    .platform-icon-svg {
+      width: clamp(1.65rem, 6vw, 2.15rem);
+      height: clamp(1.65rem, 6vw, 2.15rem);
+      position: relative;
+      z-index: 1;
+      filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.45));
+    }
+
+    .platform-chip-label {
+      font-size: 0.625rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #94a3b8;
+      transition: color 0.3s ease;
+    }
+
+    .platform-chip:nth-child(1) .platform-chip-label { color: #5eead4; }
+    .platform-chip:nth-child(2) .platform-chip-label { color: #e879f9; }
+    .platform-chip:nth-child(3) .platform-chip-label { color: #93c5fd; }
+    .platform-chip:nth-child(4) .platform-chip-label { color: #fca5a5; }
+
+    .platform-showcase-shimmer {
       display: block;
-      height: 1px;
-      margin-top: 0.55rem;
+      height: 2px;
+      margin: 0.85rem auto 0;
+      max-width: 85%;
       border-radius: 9999px;
-      background: linear-gradient(90deg, transparent, rgba(0, 245, 255, 0.35), rgba(191, 0, 255, 0.25), transparent);
+      background: linear-gradient(90deg, transparent, rgba(0, 245, 255, 0.5), rgba(191, 0, 255, 0.45), rgba(239, 68, 68, 0.35), transparent);
       background-size: 200% 100%;
-      animation: taglineShimmer 5s ease-in-out infinite;
-      opacity: 0.7;
+      animation: taglineShimmer 4s ease-in-out infinite;
+      opacity: 0.85;
+      position: relative;
+      z-index: 1;
     }
 
     @keyframes taglineShimmer {
@@ -1188,18 +1432,22 @@
       50% { background-position: 0% 0; }
     }
 
-    @media (max-width: 640px) {
-      .seo-tagline {
-        font-size: 0.75rem;
-        padding: 0.6rem 0.75rem;
-        line-height: 1.5;
+    @media (max-width: 380px) {
+      .platform-showcase-row {
+        gap: 0.5rem;
+      }
+      .platform-chip-label {
+        font-size: 0.5625rem;
       }
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .seo-tagline,
-      .seo-tagline-text,
-      .tagline-shimmer {
+      .platform-showcase,
+      .platform-chip,
+      .platform-chip-ring,
+      .platform-chip-ring::before,
+      .platform-showcase::before,
+      .platform-showcase-shimmer {
         animation: none;
       }
     }
@@ -1670,7 +1918,7 @@
 
   <header class="header-bar sticky top-0 z-40">
     <div class="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
-      <img src="/icon.svg?v=6" alt="Omni Downloader app icon" class="logo-icon footer-brand-icon" width="44" height="44">
+      <img src="/icon-512.png" alt="Omni Downloader app icon" class="logo-icon footer-brand-icon" width="44" height="44">
       <div class="min-w-0 flex-1">
         <h1 class="text-sm sm:text-base font-bold tracking-wide m-0 leading-tight">
           <span class="brand-text">OMNI DOWNLOADER</span>
@@ -1689,16 +1937,62 @@
   </div>
 
   <main class="max-w-3xl mx-auto px-4 pt-4 pb-12">
-        <p class="seo-tagline">
-          <span class="seo-tagline-text">
-            Free all-in-one video downloader — save <span class="tagline-kw tagline-kw-tiktok">TikTok</span> without watermark,
-            <span class="tagline-kw tagline-kw-insta">Instagram Reels</span>,
-            <span class="tagline-kw tagline-kw-fb">Facebook</span> &amp;
-            <span class="tagline-kw tagline-kw-yt">YouTube</span> in HD MP4 or MP3.
-            Works on iPhone, Android &amp; desktop worldwide.
-          </span>
-          <span class="tagline-shimmer" aria-hidden="true"></span>
+        <p class="seo-visually-hidden">
+          Free all-in-one video downloader — save TikTok without watermark, Instagram Reels, Facebook and YouTube in HD MP4 or MP3. Works on iPhone, Android and desktop worldwide.
         </p>
+
+        <div class="platform-showcase" aria-label="Supported platforms: TikTok, Instagram, Facebook, YouTube">
+          <div class="platform-showcase-row">
+            <button type="button" class="platform-chip" data-platform-tab="tiktok" aria-label="TikTok video downloader">
+              <span class="platform-chip-ring">
+                <svg class="platform-icon-svg" viewBox="0 0 24 24" fill="#fff" aria-hidden="true">
+                  <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"/>
+                </svg>
+              </span>
+              <span class="platform-chip-label">TikTok</span>
+            </button>
+
+            <button type="button" class="platform-chip" data-platform-tab="instagram" aria-label="Instagram Reels downloader">
+              <span class="platform-chip-ring">
+                <svg class="platform-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+                  <defs>
+                    <linearGradient id="igGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+                      <stop offset="0%" stop-color="#feda75"/>
+                      <stop offset="25%" stop-color="#fa7e1e"/>
+                      <stop offset="50%" stop-color="#d62976"/>
+                      <stop offset="75%" stop-color="#962fbf"/>
+                      <stop offset="100%" stop-color="#4f5bd5"/>
+                    </linearGradient>
+                  </defs>
+                  <rect x="2" y="2" width="20" height="20" rx="5.5" fill="url(#igGrad)"/>
+                  <circle cx="12" cy="12" r="4.2" fill="none" stroke="#fff" stroke-width="1.8"/>
+                  <circle cx="17.4" cy="6.6" r="1.3" fill="#fff"/>
+                </svg>
+              </span>
+              <span class="platform-chip-label">Instagram</span>
+            </button>
+
+            <button type="button" class="platform-chip" data-platform-tab="facebook" aria-label="Facebook video downloader">
+              <span class="platform-chip-ring">
+                <svg class="platform-icon-svg" viewBox="0 0 24 24" fill="#1877F2" aria-hidden="true">
+                  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                </svg>
+              </span>
+              <span class="platform-chip-label">Facebook</span>
+            </button>
+
+            <button type="button" class="platform-chip" data-platform-tab="facebook" aria-label="YouTube video downloader">
+              <span class="platform-chip-ring">
+                <svg class="platform-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="#FF0000" d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814z"/>
+                  <path fill="#fff" d="M9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                </svg>
+              </span>
+              <span class="platform-chip-label">YouTube</span>
+            </button>
+          </div>
+          <span class="platform-showcase-shimmer" aria-hidden="true"></span>
+        </div>
         <nav aria-label="Platform tabs" class="mb-3">
           <div class="flex flex-wrap gap-1.5" role="tablist">
             <button type="button" role="tab" aria-selected="true" aria-controls="panel-all" id="tab-all"
@@ -1828,7 +2122,7 @@
               </details>
               <details class="bg-[#1a1d27] rounded-lg border border-gray-800 p-4 group">
                 <summary class="font-semibold text-white cursor-pointer list-none flex justify-between items-center">Do I need to install an app?<span class="text-indigo-400 group-open:rotate-180 transition-transform">▼</span></summary>
-                <p class="text-gray-400 text-sm mt-3">No installation required. This is a browser-based tool that works on desktop and mobile. Just paste a link and download.</p>
+                <p class="text-gray-400 text-sm mt-3">No Play Store needed. Use it in Chrome, or tap <strong>Install App</strong> after download to add Omni Downloader to your home screen — it updates automatically with the website.</p>
               </details>
               <details class="bg-[#1a1d27] rounded-lg border border-gray-800 p-4 group">
                 <summary class="font-semibold text-white cursor-pointer list-none flex justify-between items-center">Is it safe to use?<span class="text-indigo-400 group-open:rotate-180 transition-transform">▼</span></summary>
@@ -2177,7 +2471,7 @@
   <footer class="border-t border-indigo-500/10 mt-10">
     <section class="seo-block max-w-3xl mx-auto px-4 pt-8 pb-6" aria-labelledby="footer-seo-heading">
       <div class="flex flex-col items-center gap-3 mb-5">
-        <img src="/icon.svg?v=6" alt="Omni Downloader" width="48" height="48" class="footer-brand-icon">
+        <img src="/icon-512.png" alt="Omni Downloader" width="48" height="48" class="footer-brand-icon">
         <h2 id="footer-seo-heading" class="footer-seo-title">
           Omni Downloader — TikTok, Instagram, Facebook &amp; YouTube Video Downloader Without Watermark
         </h2>
@@ -2295,16 +2589,30 @@
     </div>
   </div>
 
+  <!-- Install app modal (after download) -->
+  <div id="install-modal" class="install-modal hidden" role="dialog" aria-labelledby="install-modal-title" aria-modal="true">
+    <div class="install-modal-backdrop" id="install-modal-backdrop"></div>
+    <div class="install-modal-box">
+      <img src="/icon-512.png" alt="" class="install-modal-icon" width="64" height="64">
+      <h3 id="install-modal-title" class="install-modal-title">Install Omni Downloader App</h3>
+      <p class="install-modal-text" id="install-modal-text">Add to your home screen — open in 1 tap. Updates automatically when we improve the site. No browser needed!</p>
+      <div class="install-modal-actions">
+        <button type="button" id="install-modal-btn" class="install-modal-btn primary">Install App</button>
+        <button type="button" id="install-modal-later" class="install-modal-btn ghost">Not now</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Save site / come back bar -->
   <div id="return-bar" class="return-bar hidden" role="dialog" aria-labelledby="return-bar-title" aria-live="polite">
     <div class="return-bar-inner">
-      <img src="/icon.svg?v=6" alt="" class="return-bar-icon" width="36" height="36">
+      <img src="/icon-512.png" alt="" class="return-bar-icon" width="36" height="36">
       <div class="return-bar-text">
-        <p id="return-bar-title" class="return-bar-title">Save Omni Downloader</p>
-        <p class="return-bar-sub" id="return-bar-sub">Add to home screen — open again in 1 tap anytime!</p>
+        <p id="return-bar-title" class="return-bar-title">Install Omni Downloader App</p>
+        <p class="return-bar-sub" id="return-bar-sub">Add to home screen — open in 1 tap, auto-updates!</p>
       </div>
       <div class="return-bar-actions">
-        <button type="button" id="return-bar-save" class="return-bar-btn primary">Save</button>
+        <button type="button" id="return-bar-save" class="return-bar-btn primary">Install App</button>
         <button type="button" id="return-bar-later" class="return-bar-btn ghost">Later</button>
       </div>
     </div>
@@ -2551,6 +2859,12 @@
       });
     });
 
+    document.querySelectorAll('[data-platform-tab]').forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        activateTab(chip.getAttribute('data-platform-tab'));
+      });
+    });
+
     document.querySelectorAll('[data-tab-link]').forEach(function (link) {
       link.addEventListener('click', function (e) {
         e.preventDefault();
@@ -2754,11 +3068,11 @@
           { at: 2800, pct: 70, title: 'Almost done…', text: 'Please wait…' }
         ]
         : [
-          { at: 0, pct: 6, title: isAudio ? 'Fetching MP3…' : 'Fetching video…', text: 'Connecting to secure server…' },
-          { at: 700, pct: 24, title: 'Downloading…', text: 'Pulling HD file from CDN…' },
-          { at: 1600, pct: 42, title: 'Downloading…', text: 'Streaming to your device…' },
+          { at: 0, pct: 6, title: isAudio ? 'Fetching MP3…' : 'Fetching video…', text: 'Connecting to source…' },
+          { at: 700, pct: 24, title: 'Downloading…', text: 'Pulling file through secure server…' },
+          { at: 1600, pct: 42, title: 'Downloading…', text: 'Saving to your Downloads folder…' },
           { at: 2800, pct: 58, title: 'Almost there…', text: 'Processing video data…' },
-          { at: 4200, pct: 72, title: 'Saving file…', text: 'Keep this tab open…' }
+          { at: 4200, pct: 72, title: 'Saving file…', text: 'You stay on this page…' }
         ];
 
       stages.forEach(function (stage) {
@@ -2830,8 +3144,9 @@
     function showLoader(platform) {
       document.getElementById('loader-' + platform).classList.remove('hidden');
       document.getElementById('result-' + platform).classList.add('hidden');
+      stopLoaderStages(platform);
       setLoaderProgress(platform, 8);
-      startLoaderStages(platform);
+      setLoaderMessage(platform, 'Fetching video info…');
     }
 
     function hideLoader(platform) {
@@ -2859,7 +3174,6 @@
       resultEl.classList.remove('hidden');
     }
 
-    var PROXY_MAX_BYTES = 4 * 1024 * 1024;
     var qualityPickerState = null;
 
     var DOWNLOAD_ICON_SVG = '<svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>';
@@ -2931,6 +3245,58 @@
       }
     }
 
+    function formatVariantQuality(variant) {
+      if (!variant) return '';
+      if (variant.height > 0) return variant.height + 'p';
+      if (variant.label) return variant.label;
+      return '';
+    }
+
+    function buildTierDisplayLabel(baseLabel, variant) {
+      var q = formatVariantQuality(variant);
+      var size = variant && variant.sizeLabel ? variant.sizeLabel : '';
+      var parts = [];
+      if (q) parts.push(q);
+      if (size) parts.push(size);
+      if (!parts.length) return baseLabel;
+      return baseLabel + ' (' + parts.join(' · ') + ')';
+    }
+
+    function assignVideoTiers(data) {
+      if (!data) return data;
+      var variants = data.videoVariants || [];
+      var premiumPick = pickPremiumVariant(variants);
+      var standardPick = pickStandardVariant(variants, premiumPick);
+
+      if (standardPick && premiumPick && standardPick.url === premiumPick.url) {
+        var altPool = variants.filter(function (v) { return v.url && v.url !== premiumPick.url; });
+        altPool.sort(function (a, b) { return (b.height || 0) - (a.height || 0); });
+        standardPick = altPool.length ? pickStandardVariant(altPool, premiumPick) : null;
+      }
+
+      data.premiumPick = premiumPick;
+      data.standardPick = standardPick;
+      data.premiumUrl = premiumPick ? premiumPick.url : (data.downloadUrl || '');
+      data.standardUrl = standardPick ? standardPick.url : '';
+      data.hasDistinctTiers = Boolean(
+        premiumPick && standardPick &&
+        standardPick.url && premiumPick.url &&
+        standardPick.url !== premiumPick.url
+      );
+
+      if (premiumPick) {
+        data.premiumSizeBytes = premiumPick.sizeBytes || premiumPick.probedBytes || 0;
+        data.premiumSizeLabel = premiumPick.sizeLabel || (data.premiumSizeBytes > 0 ? formatBytes(data.premiumSizeBytes, !premiumPick.sizeExact) : '');
+        data.premiumQualityLabel = formatVariantQuality(premiumPick);
+      }
+      if (standardPick) {
+        data.standardSizeBytes = standardPick.sizeBytes || standardPick.probedBytes || 0;
+        data.standardSizeLabel = standardPick.sizeLabel || (data.standardSizeBytes > 0 ? formatBytes(data.standardSizeBytes, !standardPick.sizeExact) : '');
+        data.standardQualityLabel = formatVariantQuality(standardPick);
+      }
+      return data;
+    }
+
     function applyProbedSizesToData(data) {
       if (!data) return data;
       if (data.videoVariants && data.videoVariants.length) {
@@ -2947,16 +3313,11 @@
       }
       if (data.audioProbedBytes > 0) {
         data.audioSizeLabel = formatBytes(data.audioProbedBytes, false);
+        data.audioSizeBytes = data.audioProbedBytes;
       } else if (data.audioSizeBytes > 0) {
         data.audioSizeLabel = formatBytes(data.audioSizeBytes, true);
       }
-      var premiumPick = pickPremiumVariant(data.videoVariants || []);
-      var standardPick = pickStandardVariant(data.videoVariants || []);
-      data.standardSizeLabel = standardPick ? standardPick.sizeLabel : '';
-      data.premiumSizeLabel = premiumPick ? premiumPick.sizeLabel : '';
-      if (premiumPick) data.premiumUrl = premiumPick.url;
-      if (standardPick) data.standardUrl = standardPick.url;
-      return data;
+      return assignVideoTiers(data);
     }
 
     async function enrichVideoDataWithRealSizes(data) {
@@ -3044,7 +3405,10 @@
           noWatermark: /no.?watermark/i.test(String(m.quality || m.label || ''))
         };
 
-        var key = height || entry.label;
+        var key = height > 0 ? ('h' + height) : ('q' + String(entry.label || 'hd').toLowerCase().replace(/\s+/g, '_'));
+        if (byHeight[key] && byHeight[key].url !== entry.url) {
+          key = key + '_u' + Object.keys(byHeight).length;
+        }
         if (!byHeight[key]) {
           byHeight[key] = entry;
           return;
@@ -3074,18 +3438,35 @@
       })[0];
     }
 
-    function pickStandardVariant(variants) {
+    function pickStandardVariant(variants, premiumVariant) {
       if (!variants || !variants.length) return null;
       var sorted = variants.slice().sort(function (a, b) {
         return (b.height || 0) - (a.height || 0);
       });
-      var fitting = sorted.filter(function (v) {
-        return !v.sizeBytes || v.sizeBytes <= PROXY_MAX_BYTES;
+      var premiumHeight = premiumVariant ? (premiumVariant.height || 0) : 0;
+      var premiumUrl = premiumVariant ? premiumVariant.url : '';
+
+      var belowPremium = sorted.filter(function (v) {
+        if (premiumUrl && v.url === premiumUrl) return false;
+        if (premiumHeight > 0 && v.height > 0) return v.height < premiumHeight;
+        return Boolean(premiumUrl && v.url !== premiumUrl);
       });
-      if (fitting.length) return fitting[0];
-      return sorted.slice().sort(function (a, b) {
-        return a.sizeBytes - b.sizeBytes;
-      })[0];
+
+      if (belowPremium.length) {
+        var preferredHeights = [720, 480, 360, 240];
+        for (var i = 0; i < preferredHeights.length; i++) {
+          var match = belowPremium.find(function (v) { return v.height === preferredHeights[i]; });
+          if (match) return match;
+        }
+        return belowPremium[0];
+      }
+
+      if (sorted.length >= 2 && premiumUrl) {
+        var distinct = sorted.find(function (v) { return v.url !== premiumUrl; });
+        if (distinct) return distinct;
+      }
+
+      return null;
     }
 
     function getTierLabels(platform, sourceUrl) {
@@ -3095,31 +3476,38 @@
         return {
           standard: 'Download HD without Watermark',
           premium: 'Download Full HD without Watermark',
-          standardHint: 'Optimized for fast download (up to 4 MB)',
-          premiumHint: 'Original quality — full file size, no compression'
+          standardHint: 'NORAML QUALIY -  FAST DOWNLOADING',
+          premiumHint: 'FULL HD QUALITY - FAST DOWNLOADING'
         };
       }
       return {
         standard: 'Download HD',
         premium: 'Download FULL HD',
-        standardHint: 'Optimized for fast download (up to 4 MB)',
-        premiumHint: 'Original quality — full file size, no limit'
+        standardHint: 'NORAML QUALIY -  FAST DOWNLOADING',
+        premiumHint: 'FULL HD QUALITY - FAST DOWNLOADING'
       };
     }
 
-    function buildTierButton(tier, label, url, filename, platform, sizeLabel, isPremium) {
+    function buildTierButton(tier, label, url, filename, platform, sizeLabel, isPremium, sizeBytes, variant) {
       var cls = isPremium
         ? 'btn-download-tier btn-download-premium inline-flex items-center gap-2 px-6 py-3 rounded-lg text-white font-semibold text-sm'
         : 'btn-download-tier btn-download inline-flex items-center gap-2 px-6 py-3 rounded-lg text-white font-semibold text-sm';
-      var sizeHtml = sizeLabel
-        ? ' <span class="tier-size">(' + escapeHtml(sizeLabel) + ')</span>'
-        : '';
-      var badge = isPremium ? '<span class="tier-badge">Premium</span>' : '';
-      return '<a href="#" class="' + cls + '" data-tier="' + tier + '" data-media-url="' + escapeAttr(url) + '" data-filename="' + escapeAttr(filename) + '" data-platform="' + escapeAttr(platform) + '" data-type="video">' +
+      var displayLabel = buildTierDisplayLabel(label, Object.assign({}, variant || {}, { sizeLabel: sizeLabel }));
+      var bytesAttr = sizeBytes > 0 ? ' data-size-bytes="' + sizeBytes + '"' : '';
+      return '<a href="#" class="' + cls + '" data-tier="' + tier + '" data-media-url="' + escapeAttr(url) + '" data-filename="' + escapeAttr(filename) + '" data-platform="' + escapeAttr(platform) + '" data-type="video"' + bytesAttr + '>' +
         DOWNLOAD_ICON_SVG +
-        '<span class="download-label">' + escapeHtml(label) + sizeHtml + '</span>' +
-        badge +
+        '<span class="download-label">' + escapeHtml(displayLabel) + '</span>' +
         '</a>';
+    }
+
+    function buildAudioButton(data, platform) {
+      if (!data.audioDownloadUrl) return '';
+      var audioFilename = sanitizeFilename(data.title) + '.mp3';
+      return '<a href="#" download class="btn-download-audio inline-flex items-center gap-2 px-6 py-3 rounded-lg text-white font-semibold text-sm" data-media-url="' + escapeAttr(data.audioDownloadUrl) + '" data-filename="' + escapeAttr(audioFilename) + '" data-platform="' + escapeAttr(platform) + '" data-type="audio"' + (data.audioSizeBytes > 0 ? ' data-size-bytes="' + data.audioSizeBytes + '"' : '') + '>' +
+        '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>' +
+        '<span class="download-label">Download MP3' +
+        (data.audioSizeLabel ? ' <span class="tier-size">(' + escapeHtml(data.audioSizeLabel) + ')</span>' : '') +
+        '</span></a>';
     }
 
     function renderDownloadOptions(platform, data, sourceUrl) {
@@ -3127,48 +3515,60 @@
       if (!wrap) return;
 
       var labels = getTierLabels(platform, sourceUrl);
-      var standardUrl = data.standardUrl || data.downloadUrl;
       var premiumUrl = data.premiumUrl || data.downloadUrl;
+      var standardUrl = data.standardUrl || '';
       var filename = sanitizeFilename(data.title) + '.mp4';
-      var sameUrl = standardUrl === premiumUrl;
-
+      var hasDistinct = data.hasDistinctTiers === true;
       var html = '<div class="download-tier-stack">';
-      html += buildTierButton(
-        'standard',
-        labels.standard,
-        standardUrl,
-        filename,
-        platform,
-        data.standardSizeLabel || (sameUrl ? data.premiumSizeLabel : '')
-      );
-      html += '<p class="tier-hint">' + escapeHtml(labels.standardHint) + '</p>';
-      html += buildTierButton(
-        'premium',
-        labels.premium,
-        premiumUrl,
-        filename,
-        platform,
-        data.premiumSizeLabel || data.standardSizeLabel,
-        true
-      );
-      html += '<p class="tier-hint">' + escapeHtml(labels.premiumHint) + '</p>';
-      html += '</div>';
 
-      var audioHtml = '';
-      if (data.audioDownloadUrl) {
-        var audioExt = (data.audioExtension || 'mp3').toLowerCase();
-        var audioFilename = sanitizeFilename(data.title) + '.' + audioExt;
-        var audioLabel = audioExt === 'mp3'
-          ? 'Download MP3'
-          : 'Download Audio (' + audioExt.toUpperCase() + ')';
-        audioHtml = '<a href="#" download class="btn-download-audio inline-flex items-center gap-2 px-6 py-3 rounded-lg text-white font-semibold text-sm" data-media-url="' + escapeAttr(data.audioDownloadUrl) + '" data-filename="' + escapeAttr(audioFilename) + '" data-platform="' + escapeAttr(platform) + '" data-type="audio">' +
-          '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>' +
-          '<span class="download-label">' + escapeHtml(audioLabel) +
-          (data.audioSizeLabel ? ' <span class="tier-size">(' + escapeHtml(data.audioSizeLabel) + ')</span>' : '') +
-          '</span></a>';
+      if (hasDistinct && standardUrl) {
+        html += buildTierButton(
+          'standard',
+          labels.standard,
+          standardUrl,
+          filename,
+          platform,
+          data.standardSizeLabel,
+          false,
+          data.standardSizeBytes || 0,
+          data.standardPick
+        );
+        html += '<p class="tier-hint">' + escapeHtml(labels.standardHint || '') + '</p>';
+        html += '<span class="tier-premium-tag">Premium</span>';
+        html += buildTierButton(
+          'premium',
+          labels.premium,
+          premiumUrl,
+          filename,
+          platform,
+          data.premiumSizeLabel,
+          true,
+          data.premiumSizeBytes || 0,
+          data.premiumPick
+        );
+        html += '<p class="tier-hint">' + escapeHtml(labels.premiumHint || '') + '</p>';
+      } else {
+        html += buildTierButton(
+          'premium',
+          'Download MP4',
+          premiumUrl,
+          filename,
+          platform,
+          data.premiumSizeLabel || data.standardSizeLabel,
+          false,
+          data.premiumSizeBytes || data.standardSizeBytes || 0,
+          data.premiumPick || data.standardPick
+        );
+        html += '<p class="tier-hint">Best available quality from source' +
+          (data.premiumQualityLabel ? ' (' + escapeHtml(data.premiumQualityLabel) + ')' : '') +
+          (data.premiumSizeLabel ? ' · ' + escapeHtml(data.premiumSizeLabel) : '') +
+          '</p>';
       }
 
-      wrap.innerHTML = html + audioHtml;
+      html += buildAudioButton(data, platform);
+      html += '</div>';
+
+      wrap.innerHTML = html;
     }
 
     function filterYouTubeQualities(variants) {
@@ -3219,18 +3619,19 @@
       var state = qualityPickerState;
       if (!state || !state.data) return;
       var data = state.data;
+      data.premiumPick = variant;
       data.premiumUrl = variant.url;
       data.premiumSizeLabel = variant.sizeLabel;
+      data.premiumSizeBytes = variant.sizeBytes || variant.probedBytes || 0;
       data.qualityLabel = variant.height ? variant.height + 'p' : variant.label;
       data.downloadUrl = variant.url;
 
-      var pool = data.videoVariants.filter(function (v) {
-        if (!variant.height || !v.height) return true;
-        return v.height <= variant.height;
-      });
-      var standard = pickStandardVariant(pool.length ? pool : data.videoVariants);
-      data.standardUrl = standard ? standard.url : variant.url;
-      data.standardSizeLabel = standard ? standard.sizeLabel : variant.sizeLabel;
+      var standard = pickStandardVariant(data.videoVariants, variant);
+      data.standardPick = standard;
+      data.standardUrl = standard ? standard.url : '';
+      data.standardSizeLabel = standard ? standard.sizeLabel : '';
+      data.standardSizeBytes = standard ? (standard.sizeBytes || standard.probedBytes || 0) : 0;
+      assignVideoTiers(data);
 
       hideQualityModal();
       if (state.resolve) state.resolve(data);
@@ -3279,17 +3680,6 @@
       return div.innerHTML;
     }
 
-    function buildDownloadUrl(mediaUrl, filename) {
-      if (!mediaUrl) return '#';
-      var name = encodeURIComponent(filename || 'video.mp4');
-      return API.stream + '?url=' + encodeURIComponent(mediaUrl) + '&name=' + name;
-    }
-
-    function isMobileDevice() {
-      return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
-        (window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
-    }
-
     function isLiteMode() {
       return document.documentElement.classList.contains('lite-mode');
     }
@@ -3298,61 +3688,190 @@
       return isLiteMode() ? 550 : 320;
     }
 
-    function openDirectDownload(url, filename, isAudio) {
-      if (!url) {
-        showToast('Download link expired. Fetch the video again.', 'error');
-        return;
-      }
-      showFileDownloadOverlay(true, 'Opening download…', isAudio
-        ? 'Your MP3 will open — use Save or Share'
-        : 'Video opening — tap ⋮ or Share → Save video', 75, 'opening');
+    function buildStreamUrl(mediaUrl, filename, sizeBytes) {
+      if (!mediaUrl) return '#';
+      var name = encodeURIComponent(filename || 'video.mp4');
+      var url = API.stream + '?url=' + encodeURIComponent(mediaUrl) + '&name=' + name;
+      if (sizeBytes > 0) url += '&size=' + sizeBytes;
+      return url;
+    }
 
-      var link = document.createElement('a');
-      link.href = url;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.download = filename;
-      link.style.display = 'none';
-      document.body.appendChild(link);
-      link.click();
-      setTimeout(function () { link.remove(); }, 500);
+    function formatSpeed(bytesPerSec) {
+      var bps = parseFloat(bytesPerSec) || 0;
+      if (bps <= 0) return '…';
+      if (bps >= 1024 * 1024) return (bps / (1024 * 1024)).toFixed(1) + ' MB/s';
+      if (bps >= 1024) return Math.round(bps / 1024) + ' KB/s';
+      return Math.round(bps) + ' B/s';
+    }
 
+    function formatEta(seconds) {
+      var s = Math.max(0, Math.ceil(seconds));
+      if (s <= 0) return '';
+      if (s >= 3600) return ' · ~' + Math.ceil(s / 3600) + ' hr left';
+      if (s >= 60) return ' · ~' + Math.ceil(s / 60) + ' min left';
+      return ' · ~' + s + ' sec left';
+    }
+
+    function saveBlobAsFile(blob, filename) {
+      var blobUrl = URL.createObjectURL(blob);
+      var tempLink = document.createElement('a');
+      tempLink.href = blobUrl;
+      tempLink.download = filename;
+      tempLink.rel = 'noopener';
+      tempLink.style.display = 'none';
+      document.body.appendChild(tempLink);
+      tempLink.click();
       setTimeout(function () {
-        showFileDownloadOverlay(true, 'Ready!', 'Check your browser downloads or new tab', 100, 'success');
-      }, 500);
-      showToast(
-        isAudio
-          ? 'Audio opened — use your browser menu to save the file.'
-          : 'Video opened — use Share or browser menu to save.',
-        'info',
-        'Save to device'
-      );
-      setTimeout(function () { showFileDownloadOverlay(false); }, 2200);
+        URL.revokeObjectURL(blobUrl);
+        tempLink.remove();
+      }, 3000);
     }
 
-    function shouldUseDirectDownload(mediaUrl, isAudio) {
-      if (!mediaUrl) return false;
-      if (/\.m3u8(\?|$)/i.test(mediaUrl)) return true;
-      try {
-        var host = new URL(mediaUrl).hostname.toLowerCase();
-        if (/googlevideo|youtube|gvt1\.com|ytimg/i.test(host)) return true;
-        if (!isAudio && /fbcdn|facebook/i.test(host)) return true;
-      } catch (e) {
-        return false;
-      }
-      return false;
-    }
-
-    function finishDirectDownload(mediaUrl, filename, isAudio, platform, tier) {
+    function finishDownloadSuccess(isAudio, platform, tier) {
       stopDownloadAnimTimers();
-      openDirectDownload(mediaUrl, filename, isAudio);
+      showFileDownloadOverlay(true, 'Download complete!', 'Saved to your downloads folder', 100, 'success');
+      showToast(isAudio ? 'MP3 saved successfully!' : 'Video saved successfully!', 'success');
       markSuccessfulDownload();
       trackAnalytics('download_success', {
         platform: platform || 'all',
-        tier: tier || 'premium',
+        tier: tier || '',
         type: isAudio ? 'audio' : 'video',
-        message: 'Direct download opened'
+        message: 'Fast auto-download'
       });
+      setTimeout(function () { showFileDownloadOverlay(false); }, 2400);
+    }
+
+    async function readStreamToBlob(response, options) {
+      options = options || {};
+      var headerTotal = parseInt(response.headers.get('content-length') || '0', 10) || 0;
+      var expectedTotal = headerTotal || parseInt(options.expectedBytes, 10) || 0;
+      var contentType = response.headers.get('content-type') || 'application/octet-stream';
+      var startedAt = Date.now();
+      var lastUiAt = 0;
+      var received = 0;
+
+      function emitProgress(force) {
+        var now = Date.now();
+        if (!force && now - lastUiAt < 100 && received > 0) return;
+        lastUiAt = now;
+        var elapsed = Math.max(0.05, (now - startedAt) / 1000);
+        var speed = received / elapsed;
+        var total = expectedTotal;
+        if (received > total && received > 0) total = received;
+        var pct;
+        if (total > 0) {
+          pct = Math.min(99, Math.round((received / total) * 100));
+        } else {
+          pct = Math.min(88, 8 + Math.floor(Math.log10(received + 1) * 20));
+        }
+        var detail = total > 0
+          ? formatBytes(received, false) + ' / ' + formatBytes(total, false) + ' · ' + formatSpeed(speed)
+          : formatBytes(received, false) + ' · ' + formatSpeed(speed);
+        if (total > received && speed > 1024) {
+          detail += formatEta((total - received) / speed);
+        }
+        setDownloadProgress(pct, 'Downloading…', detail, 'downloading');
+      }
+
+      if (!response.body || typeof response.body.getReader !== 'function') {
+        var fallbackBlob = await response.blob();
+        setDownloadProgress(99, 'Saving…', formatBytes(fallbackBlob.size, false), 'downloading');
+        return fallbackBlob;
+      }
+
+      var reader = response.body.getReader();
+      var chunks = [];
+      emitProgress(true);
+
+      while (true) {
+        var step = await reader.read();
+        if (step.done) break;
+        chunks.push(step.value);
+        received += step.value.length;
+        emitProgress(false);
+      }
+
+      if (received > expectedTotal) expectedTotal = received;
+      emitProgress(true);
+      setDownloadProgress(99, 'Saving…', formatBytes(received, false), 'downloading');
+      return new Blob(chunks, { type: contentType });
+    }
+
+    async function downloadWithFastAutoSave(mediaUrl, filename, expectedBytes, isAudio, platform, tier) {
+      if (!mediaUrl) {
+        showToast('Download link expired. Fetch the video again.', 'error');
+        return;
+      }
+
+      if (/\.m3u8(\?|$)/i.test(mediaUrl)) {
+        showToast('This video uses a stream format — pick another quality or try again.', 'error');
+        return;
+      }
+
+      stopDownloadAnimTimers();
+      showFileDownloadOverlay(true, isAudio ? 'Saving MP3…' : 'Saving video…', 'Connecting…', 0, 'downloading');
+
+      try {
+        setDownloadProgress(1, 'Connecting…', 'Direct high-speed link…', 'downloading');
+        var directRes = await fetch(mediaUrl, {
+          method: 'GET',
+          mode: 'cors',
+          credentials: 'omit',
+          referrerPolicy: 'no-referrer',
+          cache: 'no-store'
+        });
+
+        if (directRes.ok) {
+          var directType = directRes.headers.get('content-type') || '';
+          if (!/application\/json/i.test(directType)) {
+            var directBlob = await readStreamToBlob(directRes, { expectedBytes: expectedBytes });
+            if (directBlob && directBlob.size > 0) {
+              saveBlobAsFile(directBlob, filename);
+              finishDownloadSuccess(isAudio, platform, tier);
+              return;
+            }
+          }
+        }
+      } catch (directErr) {
+        /* CORS blocked — use backend relay */
+      }
+
+      setDownloadProgress(2, 'Connecting…', 'Secure server relay…', 'downloading');
+      await apiInitPromise;
+      var streamUrl = buildStreamUrl(mediaUrl, filename, expectedBytes);
+      var response = await fetch(streamUrl);
+
+      if (!response.ok) {
+        var errText = '';
+        var errJson = null;
+        try {
+          errJson = await response.json();
+          errText = errJson.message || errJson.error || '';
+        } catch (parseErr) {
+          errText = 'HTTP ' + response.status;
+        }
+        if (isAdminBlockedError(errText)) {
+          showFileDownloadOverlay(false);
+          showBlockedModal('The admin / creator has not allowed downloading this video.');
+          trackAnalytics('download_fail', { platform: platform, tier: tier, message: 'Creator blocked', meta: { blocked: true } });
+          return;
+        }
+        throw new Error(errText || ('Download failed (HTTP ' + response.status + ')'));
+      }
+
+      var contentType = response.headers.get('content-type') || '';
+      if (/application\/json/i.test(contentType)) {
+        var directPayload = await response.json();
+        throw new Error(directPayload.message || directPayload.error || 'Download failed');
+      }
+
+      var blob = await readStreamToBlob(response, { expectedBytes: expectedBytes });
+      if (!blob || !blob.size) {
+        throw new Error('Empty file received — link may have expired. Fetch the video again.');
+      }
+
+      saveBlobAsFile(blob, filename);
+      finishDownloadSuccess(isAudio, platform, tier);
     }
 
     async function handleMediaDownload(e, btn) {
@@ -3364,6 +3883,11 @@
       var platform = btn.getAttribute('data-platform') || 'all';
       var isAudio = btn.getAttribute('data-type') === 'audio';
       var tier = btn.getAttribute('data-tier') || '';
+      var expectedBytes = parseInt(btn.getAttribute('data-size-bytes') || '0', 10) || 0;
+
+      if (isAudio) {
+        filename = sanitizeFilename((filename || 'audio').replace(/\.[^.]+$/, '')) + '.mp3';
+      }
 
       if (!mediaUrl) {
         showToast('No download link available. Fetch the video again.', 'error');
@@ -3377,122 +3901,49 @@
         message: isAudio ? 'MP3 download started' : 'Video download started'
       });
 
-      var isPremiumTier = tier === 'premium';
-
-      if (isPremiumTier || shouldUseDirectDownload(mediaUrl, isAudio)) {
-        showFileDownloadOverlay(true, isAudio ? 'Opening MP3…' : 'Opening HD video…', isPremiumTier
-          ? 'Full quality — original file size'
-          : 'Direct download — all platforms supported', 40, 'opening');
-        startDownloadAnimLoop(isAudio);
-        finishDirectDownload(mediaUrl, filename, isAudio, platform, tier);
-        return;
-      }
-
-      var streamUrl = buildDownloadUrl(mediaUrl, filename);
-      showFileDownloadOverlay(true, isAudio ? 'Saving MP3…' : 'Saving MP4…', 'Starting secure download…', 8, 'downloading');
-      startDownloadAnimLoop(isAudio);
-
       try {
-        await apiInitPromise;
-        var response = await fetch(streamUrl);
-
-        if (!response.ok) {
-          var errText = '';
-          var errJson = null;
+        await downloadWithFastAutoSave(mediaUrl, filename, expectedBytes, isAudio, platform, tier);
+      } catch (err) {
+        var ctx = lastFetchContext[platform];
+        if (isExpiredLinkError(err) && ctx && !ctx.linkRefreshUsed) {
           try {
-            errJson = await response.json();
-            errText = errJson.message || errJson.error || '';
-          } catch (parseErr) {
-            errText = 'HTTP ' + response.status;
-          }
-          if (response.status === 413 || (errJson && errJson.use_direct)) {
-            finishDirectDownload((errJson && errJson.direct_url) || mediaUrl, filename, isAudio, platform, tier);
-            return;
-          }
-          if (isAdminBlockedError(errText)) {
+            showToast('Link expired — getting a fresh download link…', 'info', 'Refreshing');
+            showFileDownloadOverlay(true, 'Refreshing link…', 'Please wait a moment', 15, 'downloading');
+            await refreshVideoLinks(platform);
+            var freshBtn = findDownloadButtonAfterRefresh(platform, tier, isAudio);
+            if (freshBtn && freshBtn.getAttribute('data-media-url')) {
+              showFileDownloadOverlay(true, isAudio ? 'Saving MP3…' : 'Saving video…', 'Retrying download…', 20, 'downloading');
+              await downloadWithFastAutoSave(
+                freshBtn.getAttribute('data-media-url'),
+                freshBtn.getAttribute('data-filename') || filename,
+                parseInt(freshBtn.getAttribute('data-size-bytes') || '0', 10) || 0,
+                isAudio,
+                platform,
+                tier
+              );
+              return;
+            }
+          } catch (refreshErr) {
+            stopDownloadAnimTimers();
             showFileDownloadOverlay(false);
-            showBlockedModal('The admin / creator has not allowed downloading this video.');
             trackAnalytics('download_fail', {
               platform: platform,
               tier: tier,
-              message: 'Creator blocked download',
-              meta: { blocked: true }
+              message: ('Refresh failed: ' + (refreshErr.message || 'unknown')).slice(0, 300)
             });
-            return;
-          }
-          trackAnalytics('download_fail', {
-            platform: platform,
-            tier: tier,
-            message: errText || ('Stream HTTP ' + response.status),
-            meta: { fallback: 'direct' }
-          });
-          finishDirectDownload(mediaUrl, filename, isAudio, platform, tier);
-          return;
-        }
-
-        var contentType = response.headers.get('content-type') || '';
-        if (/application\/json/i.test(contentType)) {
-          var directPayload = await response.json();
-          if (directPayload && directPayload.use_direct) {
-            finishDirectDownload(directPayload.direct_url || mediaUrl, filename, isAudio, platform, tier);
+            showToast('Could not refresh link — paste the URL and fetch again.', 'error');
             return;
           }
         }
 
-        var contentLength = response.headers.get('content-length');
-        if (contentLength && parseInt(contentLength, 10) > 4 * 1024 * 1024) {
-          finishDirectDownload(mediaUrl, filename, isAudio, platform, tier);
-          return;
-        }
-
-        setDownloadProgress(88, 'Almost done…', 'Preparing file for your device…', 'downloading');
-        var blob = await response.blob();
-
-        if (!blob || !blob.size) {
-          throw new Error('Empty file received. The video link may have expired — fetch again.');
-        }
-
-        setDownloadProgress(94, 'Saving…', 'Writing file to your device…', 'downloading');
-
-        var blobUrl = URL.createObjectURL(blob);
-        var tempLink = document.createElement('a');
-        tempLink.href = blobUrl;
-        tempLink.download = filename;
-        tempLink.rel = 'noopener';
-        tempLink.style.display = 'none';
-        document.body.appendChild(tempLink);
-        tempLink.click();
-
-        setTimeout(function () {
-          URL.revokeObjectURL(blobUrl);
-          tempLink.remove();
-        }, 3000);
-
         stopDownloadAnimTimers();
-        showFileDownloadOverlay(true, 'Download complete!', 'Saved to your downloads folder', 100, 'success');
-        showToast(isAudio ? 'MP3 saved successfully!' : 'Video saved successfully!', 'success');
-        markSuccessfulDownload();
-        trackAnalytics('download_success', {
-          platform: platform,
-          tier: tier,
-          type: isAudio ? 'audio' : 'video'
-        });
-        setTimeout(function () { showFileDownloadOverlay(false); }, 2400);
-
-      } catch (err) {
-        stopDownloadAnimTimers();
-        var mapped = mapFetchError(err);
+        showFileDownloadOverlay(false);
         trackAnalytics('download_fail', {
           platform: platform,
           tier: tier,
           message: (err && err.message ? err.message : 'Download failed').slice(0, 300)
         });
-        if (mapped.blocked) {
-          showFileDownloadOverlay(false);
-          showBlockedModal(mapped.message);
-        } else {
-          finishDirectDownload(mediaUrl, filename, isAudio, platform, tier);
-        }
+        showToast('Download failed — try again or pick another quality.', 'error');
       }
     }
 
@@ -3532,13 +3983,136 @@
     }
 
     /* ============================================================
+       Link cache — session + auto refresh on expired CDN links
+       ============================================================ */
+    var lastFetchContext = {};
+    var FETCH_CACHE_STORAGE_KEY = 'omni_fetch_cache_v1';
+    var FETCH_CACHE_TTL_MS = 45 * 60 * 1000;
+
+    function normalizeUrlForCache(url) {
+      try {
+        var u = new URL(url.indexOf('http') === 0 ? url : 'https://' + url);
+        u.hash = '';
+        ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'si', 'feature', 'fbclid', 'igsh'].forEach(function (p) {
+          u.searchParams.delete(p);
+        });
+        var out = u.href;
+        if (out.endsWith('/') && u.pathname.length > 1) out = out.slice(0, -1);
+        return out;
+      } catch (e) {
+        return String(url || '').trim();
+      }
+    }
+
+    function readFetchCacheStore() {
+      try {
+        var raw = sessionStorage.getItem(FETCH_CACHE_STORAGE_KEY);
+        if (!raw) return {};
+        var parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function writeFetchCacheStore(store) {
+      try {
+        sessionStorage.setItem(FETCH_CACHE_STORAGE_KEY, JSON.stringify(store));
+      } catch (e) {}
+    }
+
+    function getSessionFetchCache(url) {
+      var key = normalizeUrlForCache(url);
+      var store = readFetchCacheStore();
+      var entry = store[key];
+      if (!entry || !entry.data) return null;
+      if (Date.now() - entry.ts > FETCH_CACHE_TTL_MS) return null;
+      return entry.data;
+    }
+
+    function setSessionFetchCache(url, apiData) {
+      var key = normalizeUrlForCache(url);
+      var store = readFetchCacheStore();
+      store[key] = { ts: Date.now(), data: apiData };
+      var keys = Object.keys(store);
+      if (keys.length > 40) {
+        keys.sort(function (a, b) { return (store[a].ts || 0) - (store[b].ts || 0); });
+        for (var i = 0; i < keys.length - 40; i++) delete store[keys[i]];
+      }
+      writeFetchCacheStore(store);
+    }
+
+    function rememberFetchContext(platform, url, inputId) {
+      lastFetchContext[platform] = {
+        url: normalizeUrlForCache(url),
+        inputId: inputId || '',
+        linkRefreshUsed: false
+      };
+    }
+
+    function isExpiredLinkError(err) {
+      var msg = String(err && err.message ? err.message : err || '').toLowerCase();
+      return /expired|empty file|link may have|403|404|410|forbidden|not found|failed \(http/i.test(msg);
+    }
+
+    function findDownloadButtonAfterRefresh(platform, tier, isAudio) {
+      var root = '#result-' + platform;
+      if (isAudio) return document.querySelector(root + ' .btn-download-audio');
+      if (tier) {
+        var tierBtn = document.querySelector(root + ' .btn-download-tier[data-tier="' + tier + '"]');
+        if (tierBtn) return tierBtn;
+      }
+      return document.querySelector(root + ' .btn-download-tier');
+    }
+
+    async function processFetchedApiData(platform, url, apiData, options) {
+      options = options || {};
+      var videoData = normalizeApiResponse(apiData, url);
+
+      if (!videoData.downloadUrl) {
+        throw new Error('No download link found. Paste a direct video/post URL, not a profile page.');
+      }
+
+      setLoaderMessage(platform, options.fromCache ? 'Loading file sizes…' : 'Probing real file sizes…');
+      setLoaderProgress(platform, options.fromCache ? 82 : 72);
+      videoData = await enrichVideoDataWithRealSizes(videoData);
+
+      setLoaderProgress(platform, 100);
+      hideLoader(platform);
+
+      if (isYouTubeUrl(url) && videoData.videoVariants && videoData.videoVariants.length > 1) {
+        videoData = await showQualityPicker(platform, videoData);
+      }
+
+      showResult(platform, videoData, url);
+      rememberFetchContext(platform, url, options.inputId || '');
+      return videoData;
+    }
+
+    async function refreshVideoLinks(platform) {
+      var ctx = lastFetchContext[platform];
+      if (!ctx || !ctx.url) throw new Error('No video loaded to refresh.');
+      var result = await fetchVideoFromApi(ctx.url, { refresh: true });
+      setSessionFetchCache(ctx.url, result.data);
+      var videoData = await processFetchedApiData(platform, ctx.url, result.data, {
+        inputId: ctx.inputId,
+        fromCache: false
+      });
+      ctx.linkRefreshUsed = true;
+      return videoData;
+    }
+
+    /* ============================================================
        Proxy fetch — All-in-One API via local server
        ============================================================ */
-    async function callAllInOneApi(videoUrl) {
+    async function callAllInOneApi(videoUrl, options) {
+      options = options || {};
+      var headers = { 'Content-Type': 'application/json' };
+      if (options.refresh) headers['X-Omni-Refresh'] = '1';
       return fetch(API.download, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: videoUrl })
+        headers: headers,
+        body: JSON.stringify({ url: videoUrl, refresh: options.refresh === true })
       });
     }
 
@@ -3595,15 +4169,20 @@
       }
     }
 
-    async function fetchVideoFromApi(videoUrl) {
+    async function fetchVideoFromApi(videoUrl, options) {
+      options = options || {};
       await apiInitPromise;
       var lastError = 'Download failed';
       var retryCount = 0;
       var maxRetries = 8;
 
       while (true) {
-        var response = await callAllInOneApi(videoUrl);
+        var response = await callAllInOneApi(videoUrl, options);
         var data = await parseJsonResponse(response);
+
+        if (response.status === 429) {
+          throw new Error((data && data.message) || 'Too many requests — please wait a minute and try again.');
+        }
 
         if (response.ok && data.success !== false && data.error !== true) {
           return { data: data };
@@ -3681,30 +4260,37 @@
       });
 
       try {
+        var cachedRaw = getSessionFetchCache(url);
+        if (cachedRaw) {
+          setLoaderMessage(platform, 'Loading your video…');
+          setLoaderProgress(platform, 55);
+          await processFetchedApiData(platform, url, cachedRaw, { inputId: inputId, fromCache: true });
+          hideLoader(platform);
+          showToast('Ready instantly — choose MP4 or MP3 below.', 'success');
+          trackAnalytics('fetch_success', {
+            platform: platform,
+            message: 'Session cache hit',
+            meta: { cached: true }
+          });
+          return;
+        }
+
+        setLoaderMessage(platform, 'Contacting download API…');
+        setLoaderProgress(platform, 22);
         var result = await fetchVideoFromApi(url);
         var data = result.data;
 
-        var videoData = normalizeApiResponse(data, url);
+        setLoaderMessage(platform, 'Parsing video details…');
+        setLoaderProgress(platform, 48);
+        setSessionFetchCache(url, data);
 
-        if (!videoData.downloadUrl) {
-          throw new Error('No download link found. Paste a direct video/post URL, not a profile page.');
-        }
-
-        setLoaderMessage(platform, 'Checking exact file sizes…');
-        videoData = await enrichVideoDataWithRealSizes(videoData);
-
+        await processFetchedApiData(platform, url, data, { inputId: inputId });
         hideLoader(platform);
-
-        if (isYouTubeUrl(url) && videoData.videoVariants && videoData.videoVariants.length > 1) {
-          videoData = await showQualityPicker(platform, videoData);
-        }
-
-        showResult(platform, videoData, url);
         showToast('Your video is ready — choose your download option below.', 'success');
         trackAnalytics('fetch_success', {
           platform: platform,
           message: 'Video ready — user can download',
-          meta: { has_audio: Boolean(videoData.audioDownloadUrl) }
+          meta: { has_audio: Boolean(normalizeApiResponse(data, url).audioDownloadUrl), cached: false }
         });
 
       } catch (error) {
@@ -3770,40 +4356,108 @@
       }) || null;
     }
 
+    function isMp3Url(url) {
+      if (!url) return false;
+      return /\.mp3(\?|$)/i.test(String(url).split('#')[0]);
+    }
+
+    function isM4aOrAacSource(mediaOrUrl) {
+      var url = typeof mediaOrUrl === 'string' ? mediaOrUrl : (mediaOrUrl && mediaOrUrl.url);
+      if (!url) return false;
+      if (/\.m4a(\?|$)/i.test(url) || /\.aac(\?|$)/i.test(url)) return true;
+      if (typeof mediaOrUrl === 'object' && mediaOrUrl) {
+        var ext = String(mediaOrUrl.ext || mediaOrUrl.extension || '').toLowerCase();
+        return ext === 'm4a' || ext === 'aac';
+      }
+      return false;
+    }
+
     function isAudioMedia(media) {
       if (!media || !media.url) return false;
+      if (isM4aOrAacSource(media)) return false;
       var ext = String(media.ext || media.extension || '').toLowerCase();
       var type = String(media.type || '').toLowerCase();
       if (type === 'audio' || media.is_audio) return true;
-      if (/^(mp3|m4a|aac|wav|ogg|opus)$/.test(ext)) return true;
+      if (ext === 'mp3') return true;
+      if (isMp3Url(media.url)) return true;
       return /audio|music|mp3|sound/i.test(String(media.quality || media.label || ''));
     }
 
     function pickAudioFromMedias(medias) {
       if (!medias || !medias.length) return null;
 
-      var candidates = medias.filter(isAudioMedia);
-      if (!candidates.length) return null;
-
-      candidates.sort(function (a, b) {
-        function rank(m) {
-          var ext = String(m.ext || m.extension || '').toLowerCase();
-          if (ext === 'mp3') return 100;
-          if (ext === 'm4a') return 90;
-          if (ext === 'aac') return 80;
-          return 10;
-        }
-        return rank(b) - rank(a);
+      var mp3Candidates = medias.filter(function (m) {
+        if (!m || !m.url || isM4aOrAacSource(m)) return false;
+        var ext = String(m.ext || m.extension || '').toLowerCase();
+        return ext === 'mp3' || isMp3Url(m.url);
       });
 
-      return candidates[0];
+      if (!mp3Candidates.length) return null;
+      return mp3Candidates[0];
+    }
+
+    function isLikelyVideoUrl(url) {
+      if (!url) return false;
+      var u = String(url).split('#')[0].toLowerCase();
+      return /\.mp4(\?|$)|\.webm(\?|$)|\.mov(\?|$)/.test(u);
+    }
+
+    function discoverAudioDownload(payload, medias) {
+      var fromMedias = pickAudioFromMedias(medias || []);
+      if (fromMedias && fromMedias.url) {
+        return { url: fromMedias.url, extension: 'mp3' };
+      }
+
+      var music = payload && payload.music;
+      if (music && typeof music === 'object') {
+        var musicUrl = music.play_url || music.playUrl || music.url || music.download_url || music.uri || music.link;
+        if (typeof musicUrl === 'string' && musicUrl.startsWith('http') && !isLikelyVideoUrl(musicUrl) && !isM4aOrAacSource(musicUrl)) {
+          return { url: musicUrl, extension: 'mp3' };
+        }
+      }
+
+      (medias || []).some(function (m) {
+        if (!m || !m.url || isM4aOrAacSource(m)) return false;
+        if (isAudioMedia(m) || isMp3Url(m.url)) {
+          fromMedias = m;
+          return true;
+        }
+        return false;
+      });
+      if (fromMedias && fromMedias.url) {
+        return { url: fromMedias.url, extension: 'mp3' };
+      }
+
+      var stringFields = [
+        payload && payload.audio,
+        payload && payload.audio_url,
+        payload && payload.mp3,
+        payload && payload.mp3_url,
+        payload && payload.music_url,
+        payload && payload.musicUrl,
+        payload && payload.music && payload.music.url,
+        payload && payload.music && payload.music.play_url,
+        payload && payload.music && payload.music.playUrl,
+      ];
+      for (var i = 0; i < stringFields.length; i++) {
+        var val = stringFields[i];
+        if (typeof val !== 'string' || !val.startsWith('http')) continue;
+        if (isLikelyVideoUrl(val) || isM4aOrAacSource(val)) continue;
+        if (isMp3Url(val) || /music|audio|sound/i.test(val)) {
+          return { url: val, extension: 'mp3' };
+        }
+      }
+
+      return { url: '', extension: 'mp3' };
+    }
+
+    function discoverMp3AudioUrl(payload, medias) {
+      return discoverAudioDownload(payload, medias).url;
     }
 
     function inferAudioExtension(url, fallbackExt) {
-      if (fallbackExt) return fallbackExt;
-      if (!url) return 'mp3';
-      var match = String(url).split('?')[0].match(/\.(mp3|m4a|aac|wav|ogg|opus)$/i);
-      return match ? match[1].toLowerCase() : 'mp3';
+      if (fallbackExt === 'mp3' || isMp3Url(url)) return 'mp3';
+      return 'mp3';
     }
 
     function normalizeApiResponse(data, sourceUrl) {
@@ -3844,26 +4498,9 @@
       var qualityLabel = videoMedia ? formatQualityLabel(videoMedia.quality || videoMedia.label) : '';
 
       var allMedias = payload.medias || payload.audio_medias || payload.video_medias || [];
-      var audioMedia = pickAudioFromMedias(allMedias);
-      var audioDownloadUrl = '';
-      var audioExtension = 'mp3';
-
-      if (audioMedia) {
-        audioDownloadUrl = audioMedia.url || '';
-        audioExtension = inferAudioExtension(
-          audioDownloadUrl,
-          (audioMedia.ext || audioMedia.extension || '').toLowerCase()
-        );
-      } else if (typeof payload.audio === 'string' && payload.audio.startsWith('http')) {
-        audioDownloadUrl = payload.audio;
-        audioExtension = inferAudioExtension(audioDownloadUrl);
-      } else if (typeof payload.audio_url === 'string' && payload.audio_url.startsWith('http')) {
-        audioDownloadUrl = payload.audio_url;
-        audioExtension = inferAudioExtension(audioDownloadUrl);
-      } else if (payload.music && typeof payload.music.url === 'string') {
-        audioDownloadUrl = payload.music.url;
-        audioExtension = inferAudioExtension(audioDownloadUrl, (payload.music.ext || '').toLowerCase());
-      }
+      var audioInfo = discoverAudioDownload(payload, allMedias);
+      var audioDownloadUrl = audioInfo.url || '';
+      var audioExtension = audioInfo.extension || 'mp3';
 
       if (payload.video_medias && payload.video_medias.length && !downloadUrl) {
         var hdMedia = payload.video_medias.find(function (m) {
@@ -3909,6 +4546,17 @@
 
       var duration = parseInt(payload.duration || data.duration || 0, 10) || 0;
       var mediaSources = (payload.medias || []).concat(payload.video_medias || []);
+      if (payload.links && Array.isArray(payload.links)) {
+        mediaSources = mediaSources.concat(payload.links);
+      }
+      if (payload.formats && Array.isArray(payload.formats)) {
+        mediaSources = mediaSources.concat(payload.formats);
+      }
+      if (!audioDownloadUrl && mediaSources.length) {
+        var retryAudio = discoverAudioDownload(payload, mediaSources);
+        audioDownloadUrl = retryAudio.url || '';
+        audioExtension = retryAudio.extension || 'mp3';
+      }
       var videoVariants = collectVideoVariants(mediaSources, duration);
 
       if (!videoVariants.length && downloadUrl) {
@@ -3927,21 +4575,30 @@
       }
 
       var premiumPick = pickPremiumVariant(videoVariants);
-      var standardPick = pickStandardVariant(videoVariants);
+      var standardPick = pickStandardVariant(videoVariants, premiumPick);
 
       if (premiumPick) {
         downloadUrl = premiumPick.url;
         if (!qualityLabel) qualityLabel = premiumPick.label;
       }
 
-      return {
+      var normalized = {
         title: title,
         thumbnail: thumbnail,
         downloadUrl: downloadUrl,
-        standardUrl: standardPick ? standardPick.url : downloadUrl,
+        standardUrl: standardPick ? standardPick.url : '',
         premiumUrl: premiumPick ? premiumPick.url : downloadUrl,
         standardSizeLabel: standardPick ? standardPick.sizeLabel : '',
         premiumSizeLabel: premiumPick ? premiumPick.sizeLabel : '',
+        standardSizeBytes: standardPick ? (standardPick.sizeBytes || 0) : 0,
+        premiumSizeBytes: premiumPick ? (premiumPick.sizeBytes || 0) : 0,
+        standardPick: standardPick,
+        premiumPick: premiumPick,
+        hasDistinctTiers: Boolean(
+          premiumPick && standardPick &&
+          standardPick.url && premiumPick.url &&
+          standardPick.url !== premiumPick.url
+        ),
         videoVariants: videoVariants,
         audioDownloadUrl: audioDownloadUrl,
         audioExtension: audioExtension,
@@ -3949,6 +4606,8 @@
         source: formatQualityLabel(payload.source || data.source || ''),
         duration: duration
       };
+
+      return assignVideoTiers(normalized);
     }
 
     function formatQualityLabel(quality) {
@@ -3966,8 +4625,78 @@
       visits: 'omni_visits',
       lastVisit: 'omni_last_visit',
       bannerDismissed: 'omni_banner_dismissed',
+      installDismissed: 'omni_install_dismissed',
       downloads: 'omni_downloads'
     };
+
+    function isMobileDevice() {
+      return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+        (window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
+    }
+
+    function hideInstallModal() {
+      var modal = document.getElementById('install-modal');
+      if (!modal) return;
+      modal.classList.remove('show');
+      setTimeout(function () { modal.classList.add('hidden'); }, 350);
+    }
+
+    function showInstallModal(force) {
+      if (isStandaloneApp()) return;
+      if (!force) {
+        var dismissed = storageGet(RETENTION_KEYS.installDismissed);
+        if (dismissed) {
+          var ts = parseInt(dismissed, 10);
+          if (!isNaN(ts) && (Date.now() - ts) < 3 * 24 * 60 * 60 * 1000) return;
+        }
+      }
+
+      var modal = document.getElementById('install-modal');
+      var text = document.getElementById('install-modal-text');
+      if (!modal) return;
+
+      if (isIosSafari()) {
+        if (text) {
+          text.textContent = 'Tap Share (bottom of Safari) → Add to Home Screen. Opens like an app and stays updated!';
+        }
+      } else if (deferredInstallPrompt) {
+        if (text) {
+          text.textContent = 'Install on your phone — open in 1 tap. Auto-updates when we improve the website. No Chrome needed!';
+        }
+      } else if (text) {
+        text.textContent = 'Add Omni Downloader to your home screen for quick access. Works like an app and stays in sync with our website.';
+      }
+
+      modal.classList.remove('hidden');
+      requestAnimationFrame(function () { modal.classList.add('show'); });
+    }
+
+    function dismissInstallModal() {
+      hideInstallModal();
+      storageSet(RETENTION_KEYS.installDismissed, String(Date.now()));
+    }
+
+    function handleInstallApp() {
+      if (deferredInstallPrompt) {
+        deferredInstallPrompt.prompt();
+        deferredInstallPrompt.userChoice.then(function (choice) {
+          deferredInstallPrompt = null;
+          dismissInstallModal();
+          dismissReturnBar();
+          if (choice && choice.outcome === 'accepted') {
+            showToast('App installed — open from your home screen!', 'success', 'Installed');
+          }
+        });
+        return;
+      }
+      if (isIosSafari()) {
+        hideInstallModal();
+        showToast('Tap Share → Add to Home Screen to install.', 'info', 'How to install');
+        return;
+      }
+      handleSaveSite();
+      hideInstallModal();
+    }
 
     function storageGet(key) {
       try { return localStorage.getItem(key); } catch (e) { return null; }
@@ -4010,11 +4739,11 @@
       if (!bar) return;
 
       if (isIosSafari()) {
-        if (sub) sub.textContent = 'Tap Share → Add to Home Screen — open again anytime!';
+        if (sub) sub.textContent = 'Tap Share → Add to Home Screen — app-like, auto-updates!';
       } else if (deferredInstallPrompt) {
-        if (sub) sub.textContent = 'Install app — open Omni Downloader in 1 tap from your home screen!';
+        if (sub) sub.textContent = 'Install app — 1 tap from home screen, always up to date!';
       } else {
-        if (sub) sub.textContent = 'Bookmark this page (Ctrl+D) — come back anytime for free downloads!';
+        if (sub) sub.textContent = 'Install for quick access — syncs with website updates.';
       }
 
       bar.classList.remove('hidden');
@@ -4072,15 +4801,42 @@
     function markSuccessfulDownload() {
       var count = parseInt(storageGet(RETENTION_KEYS.downloads) || '0', 10) + 1;
       storageSet(RETENTION_KEYS.downloads, String(count));
-      if (!isStandaloneApp() && !isBannerDismissedRecently()) {
-        setTimeout(function () { showReturnBar(true); }, 1800);
-      }
+      if (isStandaloneApp()) return;
+      setTimeout(function () {
+        showInstallModal(true);
+        if (!isBannerDismissedRecently()) showReturnBar(true);
+      }, isMobileDevice() ? 1200 : 2000);
     }
 
     function registerServiceWorker() {
       if (!('serviceWorker' in navigator) || isLiteMode()) return;
+      var refreshing = false;
+
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('/sw.js').catch(function () {});
+        navigator.serviceWorker.register('/sw.js?v=3').then(function (reg) {
+          setInterval(function () { reg.update(); }, 60 * 60 * 1000);
+
+          reg.addEventListener('updatefound', function () {
+            var installing = reg.installing;
+            if (!installing) return;
+            installing.addEventListener('statechange', function () {
+              if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+                showToast('Update ready — refreshing to latest version…', 'info', 'Updated');
+                setTimeout(function () {
+                  if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+                }, 800);
+              }
+            });
+          });
+
+          if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }).catch(function () {});
+      });
+
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (refreshing) return;
+        refreshing = true;
+        window.location.reload();
       });
     }
 
@@ -4100,8 +4856,15 @@
 
       var saveBtn = document.getElementById('return-bar-save');
       var laterBtn = document.getElementById('return-bar-later');
-      if (saveBtn) saveBtn.addEventListener('click', handleSaveSite);
+      if (saveBtn) saveBtn.addEventListener('click', handleInstallApp);
       if (laterBtn) laterBtn.addEventListener('click', dismissReturnBar);
+
+      var installBtn = document.getElementById('install-modal-btn');
+      var installLater = document.getElementById('install-modal-later');
+      var installBackdrop = document.getElementById('install-modal-backdrop');
+      if (installBtn) installBtn.addEventListener('click', handleInstallApp);
+      if (installLater) installLater.addEventListener('click', dismissInstallModal);
+      if (installBackdrop) installBackdrop.addEventListener('click', dismissInstallModal);
 
       trackVisit();
     }

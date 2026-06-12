@@ -3,6 +3,8 @@
  * Express + sqlite3 + express-session for admin panel & API
  */
 const path = require('path');
+const { Readable } = require('stream');
+const { pipeline } = require('stream/promises');
 const express = require('express');
 const session = require('express-session');
 const SQLiteStore = require('connect-sqlite3')(session);
@@ -13,12 +15,10 @@ const {
   ensureApiKey,
   getApiKey,
   normalizeVideoUrl,
-  proxyDownload,
-  preferDirectStream,
-  PROXY_MAX_BYTES,
   upstreamHeaders,
   probeMediaSize,
 } = require('./lib/api-proxy');
+const { resolveDownloadWithCache, clientIpFromRequest } = require('./lib/link-cache');
 const { verifyLogin, authFromEvent } = require('./lib/admin-auth');
 const { getDashboardStats, updatePlanLimit } = require('./lib/admin-db');
 const {
@@ -181,26 +181,44 @@ async function handleDownload(req, res) {
     const keyCheck = ensureApiKey();
     if (!keyCheck.ok) return res.status(500).json(keyCheck.error);
 
+    const refresh = Boolean(
+      (req.body && req.body.refresh) ||
+      String(req.headers['x-omni-refresh'] || '').trim() === '1'
+    );
+    const clientIp = clientIpFromRequest(req);
+
     const started = Date.now();
-    const { status, data } = await proxyDownload(videoUrl);
-    const durationMs = Date.now() - started;
+    const result = await resolveDownloadWithCache(videoUrl, { refresh, clientIp });
+    const durationMs = result.durationMs != null ? result.durationMs : (Date.now() - started);
 
-    await trackApiCall({
-      platform: 'api',
-      success: status >= 200 && status < 400 && data && !data.error,
-      status: status,
-      duration_ms: durationMs,
-      message: status >= 400 ? 'RapidAPI error ' + status : 'RapidAPI metadata fetch',
-    }).catch(function () {});
+    if (!result.fromCache) {
+      await trackApiCall({
+        platform: 'api',
+        success: result.status >= 200 && result.status < 400 && result.data && !result.data.error,
+        status: result.status,
+        duration_ms: durationMs,
+        rateLimit: result.rateLimit,
+        message: result.status >= 400 ? 'RapidAPI error ' + result.status : 'RapidAPI metadata fetch',
+      }).catch(function () {});
+    }
 
+    if (result.fromCache) {
+      res.setHeader('X-Omni-Cache', 'HIT');
+    } else if (refresh) {
+      res.setHeader('X-Omni-Cache', 'REFRESH');
+    } else {
+      res.setHeader('X-Omni-Cache', 'MISS');
+    }
+
+    const data = result.data;
     if (!data || (typeof data === 'object' && !Object.keys(data).length)) {
-      return res.status(status || 502).json({
+      return res.status(result.status || 502).json({
         error: 'Empty RapidAPI result',
         message: 'RapidAPI returned no usable data for this URL.',
       });
     }
 
-    res.status(status).json(data);
+    res.status(result.status).json(data);
   } catch (err) {
     console.error('[download]', err);
     await trackApiCall({ platform: 'api', success: false, status: 502, message: err.message }).catch(function () {});
@@ -222,29 +240,13 @@ app.get('/api/size', async function (req, res) {
   }
 });
 
-async function probeContentLength(mediaUrl) {
-  return probeMediaSize(mediaUrl);
-}
-
 app.get('/api/stream', async function (req, res) {
   try {
     let mediaUrl = normalizeVideoUrl(String(req.query.url || '').trim());
     const filename = String(req.query.name || 'video.mp4').trim() || 'video.mp4';
+    const expectedSize = parseInt(String(req.query.size || '0'), 10) || 0;
 
     if (!mediaUrl) return res.status(400).json({ error: 'Missing url parameter' });
-
-    if (preferDirectStream(mediaUrl)) {
-      return res.json({
-        use_direct: true,
-        direct_url: mediaUrl,
-        message: 'Opening direct download…',
-      });
-    }
-
-    const knownLength = await probeContentLength(mediaUrl);
-    if (knownLength > PROXY_MAX_BYTES) {
-      return res.json({ use_direct: true, direct_url: mediaUrl, message: 'Large file — direct download' });
-    }
 
     const upstream = await fetch(mediaUrl, { headers: upstreamHeaders(mediaUrl) });
     if (!upstream.ok) {
@@ -257,23 +259,30 @@ app.get('/api/stream', async function (req, res) {
       return res.status(upstream.status).json({ error: 'Upstream HTTP ' + upstream.status });
     }
 
-    const cl = upstream.headers.get('content-length');
-    if (cl && parseInt(cl, 10) > PROXY_MAX_BYTES) {
-      return res.json({ use_direct: true, direct_url: mediaUrl });
-    }
-
-    const buffer = Buffer.from(await upstream.arrayBuffer());
-    if (buffer.length > PROXY_MAX_BYTES) {
-      return res.json({ use_direct: true, direct_url: mediaUrl });
-    }
-
     const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
     const safeName = filename.replace(/"/g, '');
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', 'attachment; filename="' + safeName + '"');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    const contentLength = upstream.headers.get('content-length');
+    if (contentLength) {
+      res.setHeader('Content-Length', contentLength);
+    } else if (expectedSize > 0) {
+      res.setHeader('Content-Length', String(expectedSize));
+    }
+
+    if (upstream.body) {
+      const nodeStream = Readable.fromWeb(upstream.body);
+      await pipeline(nodeStream, res);
+      return;
+    }
+
+    const buffer = Buffer.from(await upstream.arrayBuffer());
     res.send(buffer);
   } catch (err) {
-    res.status(502).json({ error: 'Stream error: ' + err.message });
+    if (!res.headersSent) {
+      res.status(502).json({ error: 'Stream error: ' + err.message });
+    }
   }
 });
 

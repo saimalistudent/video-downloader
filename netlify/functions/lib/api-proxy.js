@@ -4,6 +4,7 @@
 const RAPIDAPI_HOST = 'social-download-all-in-one.p.rapidapi.com';
 const RAPIDAPI_PATH = '/v1/social/autolink';
 const RAPIDAPI_SUBSCRIBE_URL = 'https://rapidapi.com/aiovod/api/social-download-all-in-one';
+const { parseRateLimitHeaders } = require('./rapidapi-usage');
 const FETCH_TIMEOUT_MS = parseInt(process.env.RAPIDAPI_TIMEOUT_MS || '22000', 10);
 const MAX_RETRIES = 1;
 
@@ -114,9 +115,11 @@ async function rapidapiDownload(videoUrl) {
         error: 'RapidAPI fetch failed',
         message: err.message || 'Network error contacting RapidAPI',
       },
+      rateLimit: null,
     };
   }
 
+  const rateLimit = parseRateLimitHeaders(response.headers);
   let text = '';
   try {
     text = await response.text();
@@ -127,6 +130,7 @@ async function rapidapiDownload(videoUrl) {
         error: 'RapidAPI read failed',
         message: err.message || 'Could not read RapidAPI response body',
       },
+      rateLimit: rateLimit,
     };
   }
 
@@ -138,6 +142,7 @@ async function rapidapiDownload(videoUrl) {
         message: `HTTP ${response.status} — verify RAPIDAPI_KEY and subscription.`,
         http_status: response.status,
       },
+      rateLimit: rateLimit,
     };
   }
 
@@ -160,6 +165,7 @@ async function rapidapiDownload(videoUrl) {
             ? 'Key wrong or expired — generate a new one.'
             : 'Subscribe to the API at subscribe_url.',
         },
+        rateLimit: rateLimit,
       };
     }
 
@@ -171,10 +177,11 @@ async function rapidapiDownload(videoUrl) {
           message: 'RAPIDAPI_KEY missing or invalid on Netlify. Redeploy after updating env vars.',
           rapidapi_message: rapidMsg || null,
         },
+        rateLimit: rateLimit,
       };
     }
 
-    return { status: response.status, data };
+    return { status: response.status, data, rateLimit: rateLimit };
   } catch (err) {
     return {
       status: 502,
@@ -184,6 +191,7 @@ async function rapidapiDownload(videoUrl) {
         raw: text.slice(0, 200),
         http_status: response.status,
       },
+      rateLimit: rateLimit,
     };
   }
 }
@@ -191,20 +199,22 @@ async function rapidapiDownload(videoUrl) {
 async function proxyDownload(videoUrl) {
   let lastStatus = 502;
   let lastData = { error: 'Download failed', message: 'Unknown error' };
+  let lastRateLimit = null;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
     try {
-      const { status, data } = await rapidapiDownload(videoUrl);
+      const { status, data, rateLimit } = await rapidapiDownload(videoUrl);
       lastStatus = status;
       lastData = data && typeof data === 'object' ? data : { error: 'Invalid RapidAPI payload', raw: data };
+      if (rateLimit) lastRateLimit = rateLimit;
 
       if (status === 200 && lastData.error !== true) {
-        return { status, data: lastData };
+        return { status, data: lastData, rateLimit: lastRateLimit };
       }
 
       const msg = String(lastData.message || lastData.error || '').toLowerCase();
       if (status !== 502 && status !== 504 && status !== 429 && !msg.includes('timeout') && !msg.includes('try again')) {
-        return { status, data: lastData };
+        return { status, data: lastData, rateLimit: lastRateLimit };
       }
     } catch (err) {
       lastStatus = 502;
@@ -219,7 +229,7 @@ async function proxyDownload(videoUrl) {
     }
   }
 
-  return { status: lastStatus, data: lastData };
+  return { status: lastStatus, data: lastData, rateLimit: lastRateLimit };
 }
 
 async function probeMediaSize(mediaUrl) {

@@ -2,8 +2,8 @@ const {
   ensureApiKey,
   getApiKey,
   normalizeVideoUrl,
-  proxyDownload,
 } = require('./lib/api-proxy');
+const { resolveDownloadWithCache, clientIpFromRequest } = require('./lib/link-cache');
 const { jsonResponse, emptyResponse, parseJsonBody, queryParam } = require('./lib/http');
 
 exports.handler = async (event, context) => {
@@ -19,6 +19,7 @@ exports.handler = async (event, context) => {
     }
 
     let videoUrl = '';
+    let refresh = false;
 
     if (method === 'POST') {
       let payload;
@@ -28,8 +29,15 @@ exports.handler = async (event, context) => {
         return jsonResponse(400, { error: 'Invalid JSON body', message: err.message });
       }
       videoUrl = String(payload.url || '').trim();
+      refresh = Boolean(payload.refresh);
     } else {
       videoUrl = queryParam(event, 'url');
+      refresh = queryParam(event, 'refresh') === '1';
+    }
+
+    if (!refresh) {
+      const hdr = event.headers || {};
+      refresh = String(hdr['x-omni-refresh'] || hdr['X-Omni-Refresh'] || '').trim() === '1';
     }
 
     videoUrl = normalizeVideoUrl(videoUrl);
@@ -46,33 +54,54 @@ exports.handler = async (event, context) => {
       return jsonResponse(500, keyCheck.error);
     }
 
-    console.log('[download] fetching video metadata, key length:', getApiKey().length);
-    const started = Date.now();
-    const { status, data } = await proxyDownload(videoUrl);
-    const durationMs = Date.now() - started;
+    const clientIp = clientIpFromRequest(event);
+    console.log('[download] fetch', refresh ? 'refresh' : 'lookup', 'key length:', getApiKey().length);
 
-    try {
-      const { trackApiCall } = require('./lib/admin-track');
-      await trackApiCall({
-        platform: 'api',
-        success: status >= 200 && status < 400 && data && !data.error,
-        status: status,
-        duration_ms: durationMs,
-        message: status >= 400 ? 'RapidAPI error ' + status : 'RapidAPI metadata fetch',
-      });
-    } catch (trackErr) {
-      console.warn('[download] admin track skipped:', trackErr.message);
+    const result = await resolveDownloadWithCache(videoUrl, { refresh, clientIp });
+
+    if (!result.fromCache) {
+      try {
+        const { trackApiCall } = require('./lib/admin-track');
+        await trackApiCall({
+          platform: 'api',
+          success: result.status >= 200 && result.status < 400 && result.data && !result.data.error,
+          status: result.status,
+          duration_ms: result.durationMs || 0,
+          rateLimit: result.rateLimit,
+          message: result.status >= 400 ? 'RapidAPI error ' + result.status : 'RapidAPI metadata fetch',
+        });
+      } catch (trackErr) {
+        console.warn('[download] admin track skipped:', trackErr.message);
+      }
     }
 
-    if (!data || (typeof data === 'object' && !Object.keys(data).length)) {
-      return jsonResponse(status || 502, {
-        error: 'Empty RapidAPI result',
-        message: 'RapidAPI returned no usable data for this URL.',
-        http_status: status,
-      });
+    const cacheHeader = result.fromCache ? 'HIT' : (refresh ? 'REFRESH' : 'MISS');
+
+    if (!result.data || (typeof result.data === 'object' && !Object.keys(result.data).length)) {
+      return {
+        statusCode: result.status || 502,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'X-Omni-Cache': cacheHeader,
+        },
+        body: JSON.stringify({
+          error: 'Empty RapidAPI result',
+          message: 'RapidAPI returned no usable data for this URL.',
+          http_status: result.status,
+        }),
+      };
     }
 
-    return jsonResponse(status, data);
+    return {
+      statusCode: result.status,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'X-Omni-Cache': cacheHeader,
+      },
+      body: JSON.stringify(result.data),
+    };
   } catch (err) {
     console.error('[download] error:', err);
     try {
