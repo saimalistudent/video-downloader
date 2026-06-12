@@ -3158,20 +3158,6 @@
         meta.innerHTML += '<span class="meta-badge">' + escapeHtml(formatDuration(data.duration)) + '</span>';
       }
     }
-      var meta = document.getElementById('meta-' + platform);
-      if (!meta) return;
-      meta.innerHTML = '';
-
-      if (data.source) {
-        meta.innerHTML += '<span class="meta-badge">' + escapeHtml(data.source) + '</span>';
-      }
-      if (data.qualityLabel) {
-        meta.innerHTML += '<span class="meta-badge">' + escapeHtml(data.qualityLabel) + '</span>';
-      }
-      if (data.duration) {
-        meta.innerHTML += '<span class="meta-badge">' + escapeHtml(formatDuration(data.duration)) + '</span>';
-      }
-    }
 
     function formatDuration(seconds) {
       var s = parseInt(seconds, 10) || 0;

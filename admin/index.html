@@ -107,6 +107,11 @@
       border: 1px solid rgba(34,197,94,.2); border-radius: .5rem;
       padding: .55rem .75rem; margin-bottom: 1rem;
     }
+    .error-banner {
+      font-size: .8125rem; color: #fecaca; background: rgba(239,68,68,.1);
+      border: 1px solid rgba(248,113,113,.25); border-radius: .5rem;
+      padding: .55rem .75rem; margin-bottom: 1rem;
+    }
 
     @media (max-width: 640px) {
       .card-value { font-size: 1.35rem; }
@@ -145,6 +150,7 @@
     </div>
 
     <p id="verified-banner" class="verified-banner hidden">● Live real data — every number comes from actual user actions on your site</p>
+    <p id="dashboard-error" class="error-banner hidden"></p>
 
     <div class="grid" id="kpi-grid">
       <div class="card"><div class="card-label">Visitors Today</div><div class="card-value" id="kpi-visitors">—</div><div class="card-sub" id="kpi-visitors-week"></div></div>
@@ -293,6 +299,13 @@
     var token = getToken();
     if (!token) { showLogin(); return; }
 
+    var liveLabel = $('live-label');
+    var errBanner = $('dashboard-error');
+    if (liveLabel) {
+      liveLabel.textContent = 'Updating…';
+      liveLabel.style.color = '#94a3b8';
+    }
+
     try {
       var res = await fetch(API_DASH, {
         credentials: 'include',
@@ -300,15 +313,38 @@
         cache: 'no-store',
       });
       if (res.status === 401) { setToken(''); showLogin(); return; }
-      var data = await res.json();
-      if (!data.ok && data.error) throw new Error(data.error);
+
+      var raw = await res.text();
+      var data;
+      try {
+        data = JSON.parse(raw);
+      } catch (parseErr) {
+        throw new Error('Server error (HTTP ' + res.status + '). Redeploy Netlify functions.');
+      }
+
+      if (!res.ok || (data.ok === false && !data.summary)) {
+        throw new Error(data.error || data.storage_error || ('Dashboard error HTTP ' + res.status));
+      }
 
       var s = data.summary || {};
       var banner = $('verified-banner');
+      if (errBanner) {
+        if (data.storage_error) {
+          errBanner.textContent = '⚠ Storage: ' + data.storage_error;
+          errBanner.classList.remove('hidden');
+        } else {
+          errBanner.textContent = '';
+          errBanner.classList.add('hidden');
+        }
+      }
       if (banner) {
-        banner.classList.remove('hidden');
-        var tier = data.plan_tier || data.auto_tier || 'free';
-        banner.textContent = '● Real live data · Plan: ' + tier + ' · ' + fmtNum(s.events_today || 0) + ' events today · ' + (data.storage || 'sqlite3');
+        if (data.storage_error) {
+          banner.classList.add('hidden');
+        } else {
+          banner.classList.remove('hidden');
+          var tier = data.plan_tier || data.auto_tier || 'free';
+          banner.textContent = '● Real live data · Plan: ' + tier + ' · ' + fmtNum(s.events_today || 0) + ' events today · ' + (data.storage || 'redis');
+        }
       }
 
       $('kpi-visitors').textContent = fmtNum(s.visitors_today);
@@ -324,17 +360,31 @@
       var errCard = $('kpi-errors').closest('.card');
       $('kpi-errors').textContent = fmtNum(s.errors_today);
       $('kpi-fetch-fail').textContent = fmtNum(s.fetch_failures_today) + ' fetch failures';
-      errCard.className = 'card' + (s.errors_today > 0 ? ' danger' : '');
+      errCard.className = 'card' + (s.errors_today > 0 ? ' danger' : ' warn');
 
       renderPlans(data.plans);
       renderFeed('activity-feed', data.recent_activity, false);
       renderFeed('error-feed', data.recent_errors, true);
 
       $('last-updated').textContent = 'Updated ' + fmtTime(data.updated_at);
-      $('storage-note').textContent = 'Storage: ' + (data.storage || 'sqlite') + ' · Auto-refresh every 4s';
+      $('storage-note').textContent = 'Storage: ' + (data.storage || 'unknown') + ' · Auto-refresh every 4s';
+
+      if (liveLabel) {
+        liveLabel.textContent = data.storage_error ? 'Storage issue' : 'Live';
+        liveLabel.style.color = data.storage_error ? '#fbbf24' : '#86efac';
+      }
     } catch (err) {
-      $('live-label').textContent = 'Reconnecting…';
-      $('live-label').style.color = '#fbbf24';
+      if (errBanner) {
+        errBanner.textContent = '⚠ ' + (err.message || 'Could not load dashboard');
+        errBanner.classList.remove('hidden');
+      }
+      if (liveLabel) {
+        liveLabel.textContent = 'Offline';
+        liveLabel.style.color = '#f87171';
+      }
+      renderPlans([]);
+      renderFeed('activity-feed', [], false);
+      renderFeed('error-feed', [], true);
     }
   }
 

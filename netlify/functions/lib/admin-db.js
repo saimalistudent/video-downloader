@@ -28,7 +28,13 @@ function redisConfig() {
 }
 
 function isHosted() {
-  return Boolean(process.env.NETLIFY || process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+  return Boolean(
+    process.env.NETLIFY ||
+    process.env.VERCEL ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.LAMBDA_TASK_ROOT ||
+    (process.env.CONTEXT && process.env.CONTEXT !== 'dev')
+  );
 }
 
 async function redisExec(command) {
@@ -43,7 +49,11 @@ async function redisExec(command) {
       },
       body: JSON.stringify(Array.isArray(command) ? command : [command]),
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      const detail = await response.text().catch(function () { return ''; });
+      console.error('[admin-db] redis HTTP', response.status, detail.slice(0, 240));
+      return null;
+    }
     return response.json();
   } catch (err) {
     console.error('[admin-db] redis error:', err.message);
@@ -154,18 +164,25 @@ async function seedRedisPlans() {
 async function ensureStore() {
   if (usingRedis) return 'redis';
 
-  if (sqlite.isAvailable() && !isHosted()) {
+  if (!isHosted() && sqlite.isAvailable()) {
     await initSchema();
     return 'sqlite3';
   }
 
   if (redisConfig()) {
     const ping = await redisExec(['PING']);
-    if (ping && ping.result === 'PONG') {
+    if (ping && String(ping.result || '').toUpperCase() === 'PONG') {
       usingRedis = true;
       await seedRedisPlans();
       return 'redis';
     }
+    console.error('[admin-db] Redis PING failed — check UPSTASH env vars');
+  } else if (isHosted()) {
+    throw new Error('Upstash Redis env missing. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN in Netlify, then redeploy.');
+  }
+
+  if (isHosted()) {
+    throw new Error('Upstash Redis not connected. Verify URL/token in Netlify env and redeploy.');
   }
 
   if (sqlite.isAvailable()) {
@@ -173,7 +190,7 @@ async function ensureStore() {
     return 'sqlite3';
   }
 
-  throw new Error('No storage available — install sqlite3 or configure Upstash Redis.');
+  throw new Error('No storage available — configure Upstash Redis (Netlify) or sqlite3 (local).');
 }
 
 function hashSession(sessionId) {
@@ -531,45 +548,123 @@ async function syncRapidApiUsageFromEvents() {
   return total;
 }
 
+function buildFallbackDashboard(storageError) {
+  const plans = defaultPlans().map(function (plan) {
+    const copy = Object.assign({}, plan, {
+      percent: planPercent(plan),
+      status: 'ok',
+      display_mode: plan.provider === 'domain' ? 'validity' : 'usage',
+      live: false,
+    });
+    if (plan.provider === 'domain') enrichDomainPlan(copy);
+    if (plan.provider === 'rapidapi') {
+      copy.meta = Object.assign({}, copy.meta || {}, { source: 'Waiting for storage connection' });
+    }
+    return copy;
+  });
+
+  return {
+    live: false,
+    verified: false,
+    storage: 'none',
+    storage_error: storageError || 'Storage not connected',
+    plan_tier: getTierLabel(),
+    auto_tier: cleanEnv(process.env.OMNI_PLAN_TIER || 'free'),
+    upgrade_hint: 'Netlify → Site settings → Environment variables → UPSTASH_REDIS_REST_URL + TOKEN → Redeploy',
+    updated_at: Date.now(),
+    summary: {
+      visitors_today: 0,
+      visitors_week: 0,
+      downloads_today: 0,
+      download_clicks_today: 0,
+      download_failures_today: 0,
+      fetch_attempts_today: 0,
+      fetch_success_today: 0,
+      fetch_failures_today: 0,
+      events_today: 0,
+      errors_today: 0,
+      success_rate: null,
+      success_rate_note: 'No data yet — fix storage to start tracking',
+      fetch_rate: null,
+      fetch_rate_note: 'No video fetch attempts today',
+    },
+    plans: plans,
+    recent_activity: [],
+    recent_errors: [],
+  };
+}
+
 async function getDashboardStats() {
-  await ensureStore();
-  await syncPlanLimitsFromTier();
-  await syncRapidApiUsageFromEvents();
+  try {
+    await ensureStore();
+  } catch (err) {
+    console.error('[admin-db] ensureStore:', err.message);
+    return buildFallbackDashboard(err.message);
+  }
+
+  try {
+    await syncPlanLimitsFromTier();
+    await syncRapidApiUsageFromEvents();
+  } catch (err) {
+    console.error('[admin-db] sync:', err.message);
+  }
 
   const todayStart = dayStartMs(0);
   const weekStart = dayStartMs(-7);
 
-  const [
-    visitorsToday,
-    visitorsWeek,
-    downloadsSuccessToday,
-    downloadsFailToday,
-    downloadStartsToday,
-    fetchStartsToday,
-    fetchSuccessToday,
-    fetchFailToday,
-    clientErrorsToday,
-    eventsToday,
-    recentEvents,
-    plans,
-    netlifyLive,
-    upstashLive,
-  ] = await Promise.all([
-    getUniqueVisitorsSince(todayStart),
-    getUniqueVisitorsSince(weekStart),
-    countEventsSince('download_success', todayStart, true),
-    countEventsSince('download_fail', todayStart, false),
-    countEventsSince('download_start', todayStart, null),
-    countEventsSince('fetch_start', todayStart, null),
-    countEventsSince('fetch_success', todayStart, true),
-    countEventsSince('fetch_fail', todayStart, false),
-    countEventsSince('client_error', todayStart, false),
-    countAllEventsSince(todayStart),
-    getRecentEvents(40),
-    getAllPlans(),
-    fetchNetlifyBandwidth(),
-    fetchUpstashUsage(),
-  ]);
+  let visitorsToday = 0;
+  let visitorsWeek = 0;
+  let downloadsSuccessToday = 0;
+  let downloadsFailToday = 0;
+  let downloadStartsToday = 0;
+  let fetchStartsToday = 0;
+  let fetchSuccessToday = 0;
+  let fetchFailToday = 0;
+  let clientErrorsToday = 0;
+  let eventsToday = 0;
+  let recentEvents = [];
+  let plans = defaultPlans();
+  let netlifyLive = null;
+  let upstashLive = null;
+
+  try {
+    [
+      visitorsToday,
+      visitorsWeek,
+      downloadsSuccessToday,
+      downloadsFailToday,
+      downloadStartsToday,
+      fetchStartsToday,
+      fetchSuccessToday,
+      fetchFailToday,
+      clientErrorsToday,
+      eventsToday,
+      recentEvents,
+      plans,
+      netlifyLive,
+      upstashLive,
+    ] = await Promise.all([
+      getUniqueVisitorsSince(todayStart),
+      getUniqueVisitorsSince(weekStart),
+      countEventsSince('download_success', todayStart, true),
+      countEventsSince('download_fail', todayStart, false),
+      countEventsSince('download_start', todayStart, null),
+      countEventsSince('fetch_start', todayStart, null),
+      countEventsSince('fetch_success', todayStart, true),
+      countEventsSince('fetch_fail', todayStart, false),
+      countEventsSince('client_error', todayStart, false),
+      countAllEventsSince(todayStart),
+      getRecentEvents(40),
+      getAllPlans(),
+      fetchNetlifyBandwidth(),
+      fetchUpstashUsage(),
+    ]);
+  } catch (err) {
+    console.error('[admin-db] stats query:', err.message);
+    const fallback = buildFallbackDashboard(err.message);
+    fallback.storage = usingRedis ? 'redis' : 'sqlite3';
+    return fallback;
+  }
 
   let successRate = null;
   let successRateNote = 'No download button clicks today';

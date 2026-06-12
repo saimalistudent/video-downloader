@@ -1,4 +1,4 @@
-const CACHE_NAME = 'omni-downloader-v1';
+const CACHE_NAME = 'omni-downloader-v2';
 const SHELL = ['/', '/index.html', '/icon.svg', '/favicon.svg', '/site.webmanifest'];
 
 self.addEventListener('install', function (event) {

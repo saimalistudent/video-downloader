@@ -13,7 +13,7 @@ exports.handler = async (event) => {
   try {
     if (method === 'GET') {
       const stats = await getDashboardStats();
-      return jsonResponse(200, { ok: true, ...stats });
+      return jsonResponse(200, Object.assign({ ok: true }, stats));
     }
 
     if (method === 'POST') {
