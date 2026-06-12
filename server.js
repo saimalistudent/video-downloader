@@ -17,6 +17,7 @@ const {
   preferDirectStream,
   PROXY_MAX_BYTES,
   upstreamHeaders,
+  probeMediaSize,
 } = require('./lib/api-proxy');
 const { verifyLogin, authFromEvent } = require('./lib/admin-auth');
 const { getDashboardStats, updatePlanLimit } = require('./lib/admin-db');
@@ -210,15 +211,19 @@ async function handleDownload(req, res) {
 app.post('/api/download', handleDownload);
 app.get('/api/download', handleDownload);
 
-async function probeContentLength(mediaUrl) {
+app.get('/api/size', async function (req, res) {
   try {
-    const head = await fetch(mediaUrl, { method: 'HEAD', headers: upstreamHeaders(mediaUrl) });
-    if (head.ok) {
-      const len = parseInt(head.headers.get('content-length') || '0', 10);
-      if (len > 0) return len;
-    }
-  } catch (e) { /* skip */ }
-  return 0;
+    const mediaUrl = normalizeVideoUrl(String(req.query.url || '').trim());
+    if (!mediaUrl) return res.status(400).json({ error: 'Missing url parameter' });
+    const bytes = await probeMediaSize(mediaUrl);
+    res.json({ ok: true, bytes: bytes });
+  } catch (err) {
+    res.status(502).json({ error: err.message || 'Size probe failed', bytes: 0 });
+  }
+});
+
+async function probeContentLength(mediaUrl) {
+  return probeMediaSize(mediaUrl);
 }
 
 app.get('/api/stream', async function (req, res) {

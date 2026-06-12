@@ -8,6 +8,7 @@
 [functions]
   node_bundler = "esbuild"
   included_files = ["netlify/functions/lib/**"]
+  external_node_modules = ["@upstash/redis", "@netlify/blobs", "sqlite3"]
 
 [functions."download"]
   timeout = 26
@@ -19,6 +20,11 @@
 [[redirects]]
   from = "/api/download"
   to = "/.netlify/functions/download"
+  status = 200
+
+[[redirects]]
+  from = "/api/size"
+  to = "/.netlify/functions/size"
   status = 200
 
 [[redirects]]

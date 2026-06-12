@@ -2871,23 +2871,127 @@
         .replace(/'/g, '&#39;');
     }
 
-    function formatBytes(bytes) {
+    function formatBytes(bytes, approximate) {
       var n = parseInt(bytes, 10) || 0;
       if (n <= 0) return '';
-      if (n < 1024) return '1 MB';
-      return (n / (1024 * 1024)).toFixed(1) + ' MB';
+      var label;
+      if (n >= 1024 * 1024 * 1024) {
+        label = (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+      } else if (n >= 1024 * 1024) {
+        label = (n / (1024 * 1024)).toFixed(1) + ' MB';
+      } else if (n >= 1024) {
+        label = Math.max(1, Math.round(n / 1024)) + ' KB';
+      } else {
+        label = n + ' B';
+      }
+      return approximate ? '~' + label : label;
     }
 
-    function parseMediaSize(media) {
-      var raw = media.data_size || media.fileSize || media.filesize || media.size || 0;
+    function parseSizeValue(raw) {
+      if (raw == null || raw === '') return 0;
+      if (typeof raw === 'number' && isFinite(raw)) {
+        return raw > 0 ? Math.round(raw) : 0;
+      }
       if (typeof raw === 'string') {
-        var num = parseFloat(raw);
+        var num = parseFloat(String(raw).replace(/,/g, ''));
+        if (!isFinite(num) || num <= 0) return 0;
         if (/gb/i.test(raw)) return Math.round(num * 1024 * 1024 * 1024);
         if (/mb/i.test(raw)) return Math.round(num * 1024 * 1024);
         if (/kb/i.test(raw)) return Math.round(num * 1024);
-        return parseInt(raw, 10) || 0;
+        if (num >= 100000) return Math.round(num);
+        if (num > 0 && num < 4096) return Math.round(num * 1024 * 1024);
+        return Math.round(num);
       }
-      return parseInt(raw, 10) || 0;
+      return 0;
+    }
+
+    function parseMediaSize(media) {
+      if (!media) return 0;
+      var fields = [
+        media.data_size, media.fileSize, media.filesize, media.file_size,
+        media.size, media.content_length, media.contentLength, media.file_size_bytes,
+        media.filesize_bytes, media.length
+      ];
+      for (var i = 0; i < fields.length; i++) {
+        var parsed = parseSizeValue(fields[i]);
+        if (parsed > 0) return parsed;
+      }
+      return 0;
+    }
+
+    async function probeUrlSize(url) {
+      if (!url) return 0;
+      try {
+        var res = await fetch('/api/size?url=' + encodeURIComponent(url), { cache: 'no-store' });
+        if (!res.ok) return 0;
+        var payload = await res.json();
+        return parseInt(payload.bytes, 10) || 0;
+      } catch (err) {
+        return 0;
+      }
+    }
+
+    function applyProbedSizesToData(data) {
+      if (!data) return data;
+      if (data.videoVariants && data.videoVariants.length) {
+        data.videoVariants.forEach(function (v) {
+          if (v.probedBytes > 0) {
+            v.sizeBytes = v.probedBytes;
+            v.sizeLabel = formatBytes(v.probedBytes, false);
+            v.sizeExact = true;
+          } else if (v.sizeBytes > 0) {
+            v.sizeLabel = formatBytes(v.sizeBytes, true);
+            v.sizeExact = false;
+          }
+        });
+      }
+      if (data.audioProbedBytes > 0) {
+        data.audioSizeLabel = formatBytes(data.audioProbedBytes, false);
+      } else if (data.audioSizeBytes > 0) {
+        data.audioSizeLabel = formatBytes(data.audioSizeBytes, true);
+      }
+      var premiumPick = pickPremiumVariant(data.videoVariants || []);
+      var standardPick = pickStandardVariant(data.videoVariants || []);
+      data.standardSizeLabel = standardPick ? standardPick.sizeLabel : '';
+      data.premiumSizeLabel = premiumPick ? premiumPick.sizeLabel : '';
+      if (premiumPick) data.premiumUrl = premiumPick.url;
+      if (standardPick) data.standardUrl = standardPick.url;
+      return data;
+    }
+
+    async function enrichVideoDataWithRealSizes(data) {
+      if (!data) return data;
+      var urls = [];
+      (data.videoVariants || []).forEach(function (v) {
+        if (v.url && urls.indexOf(v.url) === -1) urls.push(v.url);
+      });
+      if (data.audioDownloadUrl && urls.indexOf(data.audioDownloadUrl) === -1) {
+        urls.push(data.audioDownloadUrl);
+      }
+      if (!urls.length) return data;
+
+      var results = await Promise.all(urls.map(function (url) {
+        return probeUrlSize(url).then(function (bytes) {
+          return { url: url, bytes: bytes };
+        });
+      }));
+
+      var sizeByUrl = {};
+      results.forEach(function (item) {
+        if (item.bytes > 0) sizeByUrl[item.url] = item.bytes;
+      });
+
+      (data.videoVariants || []).forEach(function (v) {
+        if (sizeByUrl[v.url]) {
+          v.probedBytes = sizeByUrl[v.url];
+        }
+      });
+
+      if (data.audioDownloadUrl && sizeByUrl[data.audioDownloadUrl]) {
+        data.audioProbedBytes = sizeByUrl[data.audioDownloadUrl];
+      }
+
+      return applyProbedSizesToData(data);
     }
 
     function heightFromQualityLabel(quality) {
@@ -2935,7 +3039,8 @@
           label: formatQualityLabel(m.quality || m.label) || (height ? height + 'p' : 'HD'),
           qualityKey: height || sizeBytes,
           sizeBytes: sizeBytes,
-          sizeLabel: formatBytes(sizeBytes),
+          sizeLabel: sizeBytes > 0 ? formatBytes(sizeBytes, true) : '',
+          sizeExact: false,
           noWatermark: /no.?watermark/i.test(String(m.quality || m.label || ''))
         };
 
@@ -3058,7 +3163,9 @@
           : 'Download Audio (' + audioExt.toUpperCase() + ')';
         audioHtml = '<a href="#" download class="btn-download-audio inline-flex items-center gap-2 px-6 py-3 rounded-lg text-white font-semibold text-sm" data-media-url="' + escapeAttr(data.audioDownloadUrl) + '" data-filename="' + escapeAttr(audioFilename) + '" data-platform="' + escapeAttr(platform) + '" data-type="audio">' +
           '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>' +
-          '<span class="download-label">' + escapeHtml(audioLabel) + '</span></a>';
+          '<span class="download-label">' + escapeHtml(audioLabel) +
+          (data.audioSizeLabel ? ' <span class="tier-size">(' + escapeHtml(data.audioSizeLabel) + ')</span>' : '') +
+          '</span></a>';
       }
 
       wrap.innerHTML = html + audioHtml;
@@ -3583,6 +3690,9 @@
           throw new Error('No download link found. Paste a direct video/post URL, not a profile page.');
         }
 
+        setLoaderMessage(platform, 'Checking exact file sizes…');
+        videoData = await enrichVideoDataWithRealSizes(videoData);
+
         hideLoader(platform);
 
         if (isYouTubeUrl(url) && videoData.videoVariants && videoData.videoVariants.length > 1) {
@@ -3810,7 +3920,8 @@
           label: qualityLabel || 'HD',
           qualityKey: fallbackHeight || fallbackSize,
           sizeBytes: fallbackSize,
-          sizeLabel: formatBytes(fallbackSize),
+          sizeLabel: fallbackSize > 0 ? formatBytes(fallbackSize, true) : '',
+          sizeExact: false,
           noWatermark: /no.?watermark/i.test(qualityLabel || '')
         });
       }

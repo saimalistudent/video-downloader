@@ -222,6 +222,42 @@ async function proxyDownload(videoUrl) {
   return { status: lastStatus, data: lastData };
 }
 
+async function probeMediaSize(mediaUrl) {
+  const url = normalizeVideoUrl(mediaUrl);
+  if (!url) return 0;
+
+  const headers = upstreamHeaders(url);
+
+  try {
+    const head = await fetch(url, { method: 'HEAD', headers, redirect: 'follow' });
+    if (head.ok) {
+      const cl = parseInt(head.headers.get('content-length') || '0', 10);
+      if (cl > 0) return cl;
+    }
+  } catch (err) {
+    /* HEAD blocked — try Range GET */
+  }
+
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: Object.assign({}, headers, { Range: 'bytes=0-0' }),
+      redirect: 'follow',
+    });
+    if (res.ok || res.status === 206) {
+      const range = res.headers.get('content-range') || '';
+      const totalMatch = range.match(/\/(\d+)\s*$/);
+      if (totalMatch) return parseInt(totalMatch[1], 10) || 0;
+      const cl = parseInt(res.headers.get('content-length') || '0', 10);
+      if (cl > 0) return cl;
+    }
+  } catch (err) {
+    console.warn('[probeMediaSize]', err.message);
+  }
+
+  return 0;
+}
+
 module.exports = {
   RAPIDAPI_HOST,
   RAPIDAPI_SUBSCRIBE_URL,
@@ -232,5 +268,6 @@ module.exports = {
   preferDirectStream,
   PROXY_MAX_BYTES,
   upstreamHeaders,
+  probeMediaSize,
   proxyDownload,
 };

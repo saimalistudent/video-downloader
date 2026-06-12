@@ -332,6 +332,9 @@
         if (data.storage_error) {
           errBanner.textContent = '⚠ Storage: ' + data.storage_error;
           errBanner.classList.remove('hidden');
+        } else if (data.storage_warning) {
+          errBanner.textContent = '⚠ Upstash not connected — using Netlify Blobs for now. ' + data.storage_warning;
+          errBanner.classList.remove('hidden');
         } else {
           errBanner.textContent = '';
           errBanner.classList.add('hidden');
@@ -370,7 +373,7 @@
       $('storage-note').textContent = 'Storage: ' + (data.storage || 'unknown') + ' · Auto-refresh every 4s';
 
       if (liveLabel) {
-        liveLabel.textContent = data.storage_error ? 'Storage issue' : 'Live';
+        liveLabel.textContent = data.storage_error ? 'Storage issue' : data.storage_warning ? 'Live (Blobs)' : 'Live';
         liveLabel.style.color = data.storage_error ? '#fbbf24' : '#86efac';
       }
     } catch (err) {
