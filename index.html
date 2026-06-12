@@ -3305,7 +3305,7 @@
       var fields = [
         media.data_size, media.fileSize, media.filesize, media.file_size,
         media.size, media.content_length, media.contentLength, media.file_size_bytes,
-        media.filesize_bytes, media.length
+        media.filesize_bytes, media.length, media.clen
       ];
       for (var i = 0; i < fields.length; i++) {
         var parsed = parseSizeValue(fields[i]);
@@ -3316,6 +3316,7 @@
 
     async function probeUrlSize(url) {
       if (!url) return 0;
+      if (/googlevideo\.com|gvt1\.com/i.test(url)) return 0;
       try {
         var res = await fetch('/api/size?url=' + encodeURIComponent(url), { cache: 'no-store' });
         if (!res.ok) return 0;
@@ -3483,7 +3484,9 @@
           sizeBytes: sizeBytes,
           sizeLabel: sizeBytes > 0 ? formatBytes(sizeBytes, true) : '',
           sizeExact: false,
-          noWatermark: /no.?watermark/i.test(String(m.quality || m.label || ''))
+          noWatermark: /no.?watermark/i.test(String(m.quality || m.label || '')),
+          formatId: m.formatId || 0,
+          hasAudio: Boolean(m.is_audio && String(m.mimeType || '').indexOf('video/') === 0) || m.formatId === 18 || m.formatId === 22
         };
 
         var key = height > 0 ? ('h' + height) : ('q' + String(entry.label || 'hd').toLowerCase().replace(/\s+/g, '_'));
@@ -3717,26 +3720,6 @@
       wrap.innerHTML = html;
     }
 
-    function filterYouTubeQualities(variants) {
-      if (!variants || !variants.length) return [];
-      var preferred = [1080, 720, 480];
-      var out = [];
-      preferred.forEach(function (h) {
-        var match = variants.find(function (v) { return v.height === h; });
-        if (match) out.push(match);
-      });
-      if (out.length) return out;
-      var seen = {};
-      variants.forEach(function (v) {
-        var key = v.height || v.label;
-        if (!seen[key]) {
-          seen[key] = true;
-          out.push(v);
-        }
-      });
-      return out.sort(function (a, b) { return (b.height || 0) - (a.height || 0); });
-    }
-
     function showQualityPicker(platform, data) {
       var variants = filterYouTubeQualities(data.videoVariants);
       if (variants.length <= 1) return Promise.resolve(data);
@@ -3943,6 +3926,85 @@
       return new Blob(chunks, { type: contentType });
     }
 
+    function filterYouTubeQualities(variants) {
+      if (!variants || !variants.length) return [];
+      var withAudio = variants.filter(function (v) { return v.hasAudio || v.formatId === 18 || v.formatId === 22; });
+      var pool = withAudio.length ? withAudio : variants.slice();
+      var preferred = [1080, 720, 480, 360, 240];
+      var out = [];
+      preferred.forEach(function (h) {
+        var match = pool.find(function (v) { return v.height === h; });
+        if (match && !out.some(function (x) { return x.url === match.url; })) out.push(match);
+      });
+      if (out.length) return out;
+      var seen = {};
+      pool.forEach(function (v) {
+        var key = v.height || v.label;
+        if (!seen[key]) {
+          seen[key] = true;
+          out.push(v);
+        }
+      });
+      return out.sort(function (a, b) { return (b.height || 0) - (a.height || 0); });
+    }
+
+    async function downloadYouTubeVideo(mediaUrl, filename, expectedBytes, platform, tier) {
+      showFileDownloadOverlay(true, 'Saving YouTube video…', 'Getting fresh link…', 8, 'downloading');
+      try {
+        var ctx = lastFetchContext[platform];
+        if (ctx && ctx.url && isYouTubeUrl(ctx.url) && !ctx.linkRefreshUsed) {
+          await refreshVideoLinks(platform);
+          var freshBtn = findDownloadButtonAfterRefresh(platform, tier, false);
+          if (freshBtn && freshBtn.getAttribute('data-media-url')) {
+            mediaUrl = freshBtn.getAttribute('data-media-url');
+            expectedBytes = parseInt(freshBtn.getAttribute('data-size-bytes') || '0', 10) || expectedBytes;
+          }
+        }
+      } catch (refreshErr) {
+        console.warn('YouTube refresh skipped:', refreshErr);
+      }
+
+      setDownloadProgress(20, 'Downloading…', 'Trying secure relay…', 'downloading');
+      try {
+        await apiInitPromise;
+        var streamRes = await fetch(buildStreamUrl(mediaUrl, filename, expectedBytes));
+        if (streamRes.ok) {
+          var ct = streamRes.headers.get('content-type') || '';
+          if (!/application\/json/i.test(ct)) {
+            var blob = await readStreamToBlob(streamRes, { expectedBytes: expectedBytes });
+            if (blob && blob.size > 0) {
+              saveBlobAsFile(blob, filename);
+              finishDownloadSuccess(false, platform, tier);
+              return;
+            }
+          }
+        }
+      } catch (streamErr) {
+        console.warn('YouTube stream relay failed:', streamErr);
+      }
+
+      stopDownloadAnimTimers();
+      showFileDownloadOverlay(false);
+
+      var link = document.createElement('a');
+      link.href = mediaUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      showToast('YouTube download opened — if video plays, tap ⋮ → Download or long-press → Save', 'success', 'YouTube');
+      trackAnalytics('download_success', {
+        platform: platform,
+        tier: tier,
+        type: 'video',
+        message: 'YouTube browser direct'
+      });
+      markSuccessfulDownload();
+    }
+
     async function downloadWithFastAutoSave(mediaUrl, filename, expectedBytes, isAudio, platform, tier) {
       if (!mediaUrl) {
         showToast('Download link expired. Fetch the video again.', 'error');
@@ -3951,6 +4013,11 @@
 
       if (/\.m3u8(\?|$)/i.test(mediaUrl)) {
         showToast('This video uses a stream format — pick another quality or try again.', 'error');
+        return;
+      }
+
+      if (!isAudio && isGoogleVideoUrl(mediaUrl)) {
+        await downloadYouTubeVideo(mediaUrl, filename, expectedBytes, platform, tier);
         return;
       }
 
@@ -4136,6 +4203,26 @@
       return /youtube\.com|youtu\.be/i.test(url);
     }
 
+    function isGoogleVideoUrl(url) {
+      return /googlevideo\.com|gvt1\.com/i.test(String(url || ''));
+    }
+
+    function pickYouTubeProgressive(medias) {
+      if (!medias || !medias.length) return null;
+      var pool = medias.filter(function (m) {
+        if (!m || !m.url || !isGoogleVideoUrl(m.url)) return false;
+        if (m.formatId === 22 || m.formatId === 18) return true;
+        if (String(m.ext || '').toLowerCase() === 'mp4' && String(m.type || '').toLowerCase() === 'video') {
+          return /video\/mp4/i.test(String(m.mimeType || '')) && (m.is_audio || /mp4 \(/.test(String(m.label || '')));
+        }
+        return false;
+      });
+      pool.sort(function (a, b) {
+        return (b.height || 0) - (a.height || 0) || (b.formatId || 0) - (a.formatId || 0);
+      });
+      return pool[0] || null;
+    }
+
     function matchesPlatform(url, platform) {
       if (platform === 'all') return true;
       if (platform === 'tiktok') return isTikTokUrl(url);
@@ -4300,8 +4387,10 @@
 
     function isRetryableError(data, status) {
       var msg = extractApiError(data).toLowerCase();
-      return status === 504 || status === 502 || status === 429 ||
-        /timeout|timed out|try again|rate limit/i.test(msg);
+      if (/quota|exceeded|monthly.*limit|upgrade your plan/i.test(msg)) return false;
+      return status === 504 || status === 502 ||
+        (status === 429 && !/quota|exceeded|monthly/i.test(msg)) ||
+        /timeout|timed out|try again/i.test(msg);
     }
 
     function isLocalDev() {
@@ -4372,7 +4461,14 @@
           throw new Error('RapidAPI key missing — add RAPIDAPI_KEY in Netlify Environment variables and Redeploy.');
         }
 
-        if (/upgrade|facebook/i.test(lastError)) {
+        if (/quota|exceeded|monthly.*limit|upgrade your plan/i.test(lastError)) {
+          var rl = data && data._rateLimit;
+          var resetDays = rl && rl.reset ? Math.ceil(parseInt(rl.reset, 10) / 86400) : 0;
+          var resetNote = resetDays > 0 ? (' Resets in ~' + resetDays + ' days.') : '';
+          throw new Error('RapidAPI limit full (100/100 used this month).' + resetNote + ' Only previously fetched links work from cache. Upgrade Pro ($2/mo): rapidapi.com → Social Download All In One → Pro.');
+        }
+
+        if (/upgrade/i.test(lastError) && /facebook/i.test(lastError)) {
           throw new Error('Facebook download temporarily unavailable. Try a facebook.com/reel/ link.');
         }
 
@@ -4555,8 +4651,13 @@
     function pickVideoFromMedias(medias) {
       if (!medias || !medias.length) return null;
 
+      var ytProgressive = pickYouTubeProgressive(medias);
+      if (ytProgressive) return ytProgressive;
+
       var candidates = medias.filter(function (m) {
-        return m.url && m.type === 'video' && !m.is_audio && m.ext !== 'm4a';
+        if (!m || !m.url || String(m.type || '').toLowerCase() !== 'video') return false;
+        if (isAudioMedia(m)) return false;
+        return m.ext !== 'm4a';
       });
 
       var mp4Videos = candidates.filter(function (m) {
@@ -4604,7 +4705,9 @@
       if (isM4aOrAacSource(media)) return false;
       var ext = String(media.ext || media.extension || '').toLowerCase();
       var type = String(media.type || '').toLowerCase();
-      if (type === 'audio' || media.is_audio) return true;
+      if (type === 'video' && (ext === 'mp4' || ext === 'webm')) return false;
+      if (type === 'audio') return true;
+      if (media.is_audio && type !== 'video') return true;
       if (ext === 'mp3') return true;
       if (isMp3Url(media.url)) return true;
       return /audio|music|mp3|sound/i.test(String(media.quality || media.label || ''));

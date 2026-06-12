@@ -176,6 +176,12 @@ function isSuccessfulApiPayload(status, data) {
   return true;
 }
 
+function isQuotaExceeded(status, data) {
+  if (status === 429) return true;
+  const msg = String((data && (data.message || data.error)) || '').toLowerCase();
+  return /quota|exceeded|monthly.*limit|upgrade your plan/i.test(msg);
+}
+
 async function resolveDownloadWithCache(videoUrl, options) {
   options = options || {};
   const refresh = options.refresh === true;
@@ -197,6 +203,16 @@ async function resolveDownloadWithCache(videoUrl, options) {
 
   const rate = await checkRateLimit(clientIp);
   if (!rate.ok) {
+    const cached = await getCachedLink(videoUrl);
+    if (cached) {
+      return {
+        status: cached.status,
+        data: cached.data,
+        rateLimit: null,
+        fromCache: true,
+        staleCache: true,
+      };
+    }
     return {
       status: 429,
       data: {
@@ -215,11 +231,23 @@ async function resolveDownloadWithCache(videoUrl, options) {
 
   if (isSuccessfulApiPayload(status, data)) {
     await setCachedLink(videoUrl, status, data);
+  } else if (isQuotaExceeded(status, data) && !refresh) {
+    const cached = await getCachedLink(videoUrl);
+    if (cached) {
+      return {
+        status: cached.status,
+        data: cached.data,
+        rateLimit: rateLimit,
+        fromCache: true,
+        staleCache: true,
+        durationMs: durationMs,
+      };
+    }
   }
 
   return {
     status: status,
-    data: data,
+    data: Object.assign({}, data || {}, rateLimit ? { _rateLimit: rateLimit } : {}),
     rateLimit: rateLimit,
     fromCache: false,
     durationMs: durationMs,
