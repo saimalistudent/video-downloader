@@ -248,12 +248,21 @@ app.get('/api/stream', async function (req, res) {
 
     if (!mediaUrl) return res.status(400).json({ error: 'Missing url parameter' });
 
-    const upstream = await fetch(mediaUrl, { headers: upstreamHeaders(mediaUrl) });
+    const headers = upstreamHeaders(mediaUrl);
+    let upstream = await fetch(mediaUrl, { headers: headers });
+    if (!upstream.ok && (upstream.status === 403 || upstream.status === 401)) {
+      upstream = await fetch(mediaUrl, {
+        headers: Object.assign({}, headers, {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          Accept: 'video/mp4,video/*,*/*;q=0.8',
+        }),
+      });
+    }
     if (!upstream.ok) {
       if (upstream.status === 403 || upstream.status === 401) {
         return res.status(403).json({
-          error: 'Download not allowed',
-          message: 'The admin / creator has not allowed downloading this video.',
+          error: 'CDN blocked relay',
+          message: 'Download link expired or blocked by the platform CDN. Click Download again to refresh the link.',
         });
       }
       return res.status(upstream.status).json({ error: 'Upstream HTTP ' + upstream.status });

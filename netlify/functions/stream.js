@@ -24,15 +24,24 @@ exports.handler = async (event) => {
       return jsonResponse(400, { error: 'Missing url parameter' });
     }
 
-    const upstream = await fetch(mediaUrl, {
-      headers: upstreamHeaders(mediaUrl),
-    });
+    const upstreamReqHeaders = upstreamHeaders(mediaUrl);
+    let upstream = await fetch(mediaUrl, { headers: upstreamReqHeaders, redirect: 'follow' });
+
+    if (!upstream.ok && (upstream.status === 403 || upstream.status === 401)) {
+      upstream = await fetch(mediaUrl, {
+        headers: Object.assign({}, upstreamReqHeaders, {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          Accept: 'video/mp4,video/*,*/*;q=0.8',
+        }),
+        redirect: 'follow',
+      });
+    }
 
     if (!upstream.ok) {
       if (upstream.status === 403 || upstream.status === 401) {
         return jsonResponse(403, {
-          error: 'Download not allowed',
-          message: 'The admin / creator has not allowed downloading this video.',
+          error: 'CDN blocked relay',
+          message: 'Download link expired or blocked by the platform CDN. Click Download again to refresh the link.',
         });
       }
       return jsonResponse(upstream.status, { error: 'Upstream HTTP ' + upstream.status });
@@ -45,25 +54,25 @@ exports.handler = async (event) => {
     }
 
     const safeName = filename.replace(/"/g, '');
-    const headers = corsHeaders({
+    const responseHeaders = corsHeaders({
       'Content-Type': upstream.headers.get('content-type') || 'application/octet-stream',
       'Content-Disposition': 'attachment; filename="' + safeName + '"',
     });
     const contentLength = upstream.headers.get('content-length');
     if (contentLength) {
-      headers['Content-Length'] = contentLength;
+      responseHeaders['Content-Length'] = contentLength;
     } else if (expectedSize > 0) {
-      headers['Content-Length'] = String(expectedSize);
+      responseHeaders['Content-Length'] = String(expectedSize);
     }
 
     if (typeof Response !== 'undefined' && upstream.body) {
-      return new Response(upstream.body, { status: 200, headers: headers });
+      return new Response(upstream.body, { status: 200, headers: responseHeaders });
     }
 
     const buffer = Buffer.from(await upstream.arrayBuffer());
     return {
       statusCode: 200,
-      headers: headers,
+      headers: responseHeaders,
       body: buffer.toString('base64'),
       isBase64Encoded: true,
     };

@@ -76,7 +76,7 @@ async function fetchRapidApiUsageLive(force) {
 
   try {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timer = controller ? setTimeout(function () { controller.abort(); }, 14000) : null;
+    const timer = controller ? setTimeout(function () { controller.abort(); }, 5000) : null;
 
     const res = await fetch('https://social-download-all-in-one.p.rapidapi.com/v1/social/autolink', {
       method: 'POST',

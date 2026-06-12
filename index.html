@@ -1088,6 +1088,78 @@
       max-width: 22rem;
     }
 
+    .slideshow-panel {
+      width: 100%;
+      max-width: 100%;
+      margin-top: 0.25rem;
+      padding: 0.85rem;
+      border-radius: 0.75rem;
+      border: 1px solid rgba(94, 234, 212, 0.2);
+      background: rgba(15, 23, 42, 0.55);
+    }
+    .slideshow-head {
+      font-size: 0.875rem;
+      font-weight: 700;
+      color: #5eead4;
+      margin-bottom: 0.25rem;
+    }
+    .slideshow-hint {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      margin-bottom: 0.75rem;
+    }
+    .slideshow-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+      gap: 0.55rem;
+      margin-bottom: 0.85rem;
+    }
+    .slideshow-slide {
+      border-radius: 0.55rem;
+      overflow: hidden;
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      background: #0f1117;
+    }
+    .slideshow-slide img {
+      width: 100%;
+      aspect-ratio: 3/4;
+      object-fit: cover;
+      display: block;
+      background: #1e293b;
+    }
+    .btn-download-slide {
+      width: 100%;
+      border: none;
+      background: rgba(99, 102, 241, 0.15);
+      color: #c7d2fe;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      padding: 0.35rem 0.25rem;
+      cursor: pointer;
+    }
+    .btn-download-slide:hover { background: rgba(99, 102, 241, 0.28); }
+    .slideshow-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .btn-slideshow-video,
+    .btn-slideshow-all {
+      border: none;
+      border-radius: 0.5rem;
+      padding: 0.55rem 0.85rem;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      cursor: pointer;
+      color: #fff;
+    }
+    .btn-slideshow-video {
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+    }
+    .btn-slideshow-all {
+      background: linear-gradient(135deg, #6366f1, #4f46e5);
+    }
+
     .btn-download-audio {
       width: 100%;
       justify-content: center;
@@ -2992,7 +3064,12 @@
 
     function isAdminBlockedError(message) {
       var msg = String(message || '').toLowerCase();
-      return /not allowed|disabled download|download disabled|private video|private account|creator has|copyright|restricted|permission denied|unavailable|geo.block|region block|login required|sign in|age.restrict|removed|deleted|blocked by|owner has/i.test(msg);
+      if (/admin\s*\/\s*creator|creator has not allowed|owner has (not )?allowed|disabled download|download disabled|download not allowed|not allowed downloading|private video|private account|video is private|account is private|this content is private|cannot download this|permission to download/i.test(msg)) {
+        return true;
+      }
+      if (/not allowed/i.test(msg) && /download|video|content|save|watermark/i.test(msg)) return true;
+      if (/geo.?block|region block|country block/i.test(msg) && /video|download/i.test(msg)) return true;
+      return false;
     }
 
     function showBlockedModal(message) {
@@ -3118,7 +3195,7 @@
     function mapFetchError(error) {
       var msg = (error && error.message) ? error.message : String(error || 'Download failed');
       if (isAdminBlockedError(msg)) {
-        return { blocked: true, message: 'The admin / creator has not allowed downloading this video.' };
+        return { blocked: true, message: 'This video cannot be downloaded — the creator or platform restricted saving it.' };
       }
       return { blocked: false, message: msg };
     }
@@ -3156,13 +3233,17 @@
     }
 
     function showResult(platform, data, sourceUrl) {
-      document.getElementById('thumb-' + platform).src = data.thumbnail || '';
+      document.getElementById('thumb-' + platform).src = data.thumbnail || (data.slides && data.slides[0] && data.slides[0].url) || '';
       document.getElementById('thumb-' + platform).alt = data.title || 'Video thumbnail';
       document.getElementById('thumb-' + platform).decoding = 'async';
       document.getElementById('title-' + platform).textContent = data.title || 'Untitled Video';
 
       renderMetaBadges(platform, data);
-      renderDownloadOptions(platform, data, sourceUrl || '');
+      if (data.isSlideshow && data.slides && data.slides.length) {
+        renderSlideshowOptions(platform, data, sourceUrl || '');
+      } else {
+        renderDownloadOptions(platform, data, sourceUrl || '');
+      }
 
       var resultEl = document.getElementById('result-' + platform);
       var article = resultEl.querySelector('article');
@@ -3510,6 +3591,71 @@
         '</span></a>';
     }
 
+    function renderSlideshowOptions(platform, data, sourceUrl) {
+      var wrap = document.querySelector('#result-' + platform + ' .download-actions');
+      if (!wrap) return;
+
+      var slides = data.slides || [];
+      var baseName = sanitizeFilename(data.title);
+      var hasVideo = Boolean(data.downloadUrl || data.premiumUrl);
+      var videoUrl = data.premiumUrl || data.downloadUrl || '';
+
+      var html = '<div class="slideshow-panel">';
+      html += '<p class="slideshow-head">TikTok Slideshow — ' + slides.length + ' slide' + (slides.length === 1 ? '' : 's') + '</p>';
+      html += '<p class="slideshow-hint">Download any single slide, all slides as images, or the full slideshow video with music.</p>';
+      html += '<div class="slideshow-grid">';
+
+      slides.forEach(function (slide, idx) {
+        var num = slide.index || (idx + 1);
+        var ext = slide.ext || 'jpg';
+        var fname = baseName + '-slide-' + num + '.' + ext;
+        html += '<div class="slideshow-slide">' +
+          '<img src="' + escapeAttr(slide.url) + '" alt="Slide ' + num + '" loading="lazy" decoding="async">' +
+          '<button type="button" class="btn-download-slide" data-media-url="' + escapeAttr(slide.url) + '" data-filename="' + escapeAttr(fname) + '" data-platform="' + escapeAttr(platform) + '" data-type="slide">Slide ' + num + '</button>' +
+          '</div>';
+      });
+
+      html += '</div><div class="slideshow-actions">';
+      if (hasVideo) {
+        html += '<button type="button" class="btn-slideshow-video btn-download-tier" data-tier="premium" data-media-url="' + escapeAttr(videoUrl) + '" data-filename="' + escapeAttr(baseName + '.mp4') + '" data-platform="' + escapeAttr(platform) + '" data-type="video">Download as Video (MP4)</button>';
+      }
+      html += '<button type="button" class="btn-slideshow-all" data-platform="' + escapeAttr(platform) + '" data-slideshow="1">Download All Slides</button>';
+      html += '</div>';
+
+      if (data.audioDownloadUrl) {
+        html += buildAudioButton(data, platform);
+      } else if (!hasVideo) {
+        html += '<p class="tier-hint" style="margin-top:.5rem">No video track — this post is photo slides only. Download slides above.</p>';
+      }
+
+      html += '</div>';
+      wrap.innerHTML = html;
+    }
+
+    async function downloadAllSlides(platform) {
+      var ctx = lastFetchContext[platform];
+      if (!ctx || !ctx.slides || !ctx.slides.length) {
+        showToast('No slides loaded.', 'error');
+        return;
+      }
+      var baseName = sanitizeFilename(ctx.title || 'tiktok-slideshow');
+      trackAnalytics('download_start', { platform: platform, type: 'slideshow_all', message: 'Download all slides' });
+      showToast('Downloading ' + ctx.slides.length + ' slides…', 'info');
+      for (var i = 0; i < ctx.slides.length; i++) {
+        var slide = ctx.slides[i];
+        var num = slide.index || (i + 1);
+        var ext = slide.ext || 'jpg';
+        try {
+          await downloadWithFastAutoSave(slide.url, baseName + '-slide-' + num + '.' + ext, 0, false, platform, 'slide');
+          if (i < ctx.slides.length - 1) await sleep(400);
+        } catch (err) {
+          showToast('Slide ' + num + ' failed — continuing…', 'error');
+        }
+      }
+      showToast('All slides downloaded!', 'success');
+      trackAnalytics('download_success', { platform: platform, type: 'slideshow_all', message: ctx.slides.length + ' slides' });
+    }
+
     function renderDownloadOptions(platform, data, sourceUrl) {
       var wrap = document.querySelector('#result-' + platform + ' .download-actions');
       if (!wrap) return;
@@ -3852,7 +3998,7 @@
         }
         if (isAdminBlockedError(errText)) {
           showFileDownloadOverlay(false);
-          showBlockedModal('The admin / creator has not allowed downloading this video.');
+          showBlockedModal('This video cannot be downloaded — the creator or platform restricted saving it.');
           trackAnalytics('download_fail', { platform: platform, tier: tier, message: 'Creator blocked', meta: { blocked: true } });
           return;
         }
@@ -3949,6 +4095,22 @@
 
     function initDownloadButtons() {
       document.addEventListener('click', function (e) {
+        var slideBtn = e.target.closest('.btn-download-slide');
+        if (slideBtn) {
+          handleMediaDownload(e, slideBtn);
+          return;
+        }
+        var allBtn = e.target.closest('.btn-slideshow-all');
+        if (allBtn) {
+          e.preventDefault();
+          downloadAllSlides(allBtn.getAttribute('data-platform') || 'all');
+          return;
+        }
+        var videoBtn = e.target.closest('.btn-slideshow-video');
+        if (videoBtn) {
+          handleMediaDownload(e, videoBtn);
+          return;
+        }
         var btn = e.target.closest('.btn-download-tier, .btn-download-audio');
         if (btn) handleMediaDownload(e, btn);
       });
@@ -4042,11 +4204,13 @@
       writeFetchCacheStore(store);
     }
 
-    function rememberFetchContext(platform, url, inputId) {
+    function rememberFetchContext(platform, url, inputId, videoData) {
       lastFetchContext[platform] = {
         url: normalizeUrlForCache(url),
         inputId: inputId || '',
-        linkRefreshUsed: false
+        linkRefreshUsed: false,
+        slides: videoData && videoData.slides ? videoData.slides : [],
+        title: videoData && videoData.title ? videoData.title : ''
       };
     }
 
@@ -4069,8 +4233,16 @@
       options = options || {};
       var videoData = normalizeApiResponse(apiData, url);
 
-      if (!videoData.downloadUrl) {
+      if (!videoData.downloadUrl && !(videoData.isSlideshow && videoData.slides && videoData.slides.length)) {
         throw new Error('No download link found. Paste a direct video/post URL, not a profile page.');
+      }
+
+      if (videoData.isSlideshow && videoData.slides && videoData.slides.length && !videoData.downloadUrl) {
+        setLoaderProgress(platform, 100);
+        hideLoader(platform);
+        showResult(platform, videoData, url);
+        rememberFetchContext(platform, url, options.inputId || '', videoData);
+        return videoData;
       }
 
       setLoaderMessage(platform, options.fromCache ? 'Loading file sizes…' : 'Probing real file sizes…');
@@ -4085,7 +4257,7 @@
       }
 
       showResult(platform, videoData, url);
-      rememberFetchContext(platform, url, options.inputId || '');
+      rememberFetchContext(platform, url, options.inputId || '', videoData);
       return videoData;
     }
 
@@ -4211,7 +4383,7 @@
         }
 
         if (isAdminBlockedError(lastError)) {
-          throw new Error('The admin / creator has not allowed downloading this video.');
+          throw new Error('This video cannot be downloaded — the creator or platform restricted saving it.');
         }
 
         throw new Error(lastError);
@@ -4323,6 +4495,61 @@
         return data.data;
       }
       return data;
+    }
+
+    function isImageMedia(m) {
+      if (!m || !m.url) return false;
+      var type = String(m.type || m.media_type || '').toLowerCase();
+      if (type === 'photo' || type === 'image' || type === 'picture' || type === 'carousel') return true;
+      var ext = String(m.ext || m.extension || '').toLowerCase();
+      if (/^(jpg|jpeg|png|webp|gif|heic)$/.test(ext)) return true;
+      var url = String(m.url).split('?')[0].toLowerCase();
+      return /\.(jpg|jpeg|png|webp|gif|heic)(\?|$)/.test(url);
+    }
+
+    function guessImageExt(url) {
+      var u = String(url || '').split('?')[0].toLowerCase();
+      if (/\.png(\?|$)/.test(u)) return 'png';
+      if (/\.webp(\?|$)/.test(u)) return 'webp';
+      if (/\.gif(\?|$)/.test(u)) return 'gif';
+      return 'jpg';
+    }
+
+    function extractSlidesFromPayload(payload, medias) {
+      var slides = [];
+      var seen = {};
+
+      function addSlide(url) {
+        if (!url || typeof url !== 'string' || !url.startsWith('http') || seen[url]) return;
+        seen[url] = true;
+        slides.push({ url: url, index: slides.length + 1, ext: guessImageExt(url) });
+      }
+
+      (medias || []).forEach(function (m) {
+        if (isImageMedia(m)) addSlide(m.url);
+      });
+
+      var lists = [
+        payload && payload.images,
+        payload && payload.image_post && payload.image_post.images,
+        payload && payload.imagePost && payload.imagePost.images,
+        payload && payload.image_post_info && payload.image_post_info.images,
+        payload && payload.carousel_media,
+        payload && payload.carousel_images,
+      ];
+
+      lists.forEach(function (list) {
+        if (!Array.isArray(list)) return;
+        list.forEach(function (item) {
+          if (typeof item === 'string') addSlide(item);
+          else if (item && item.url) addSlide(item.url);
+          else if (item && item.imageURL && item.imageURL.urlList && item.imageURL.urlList[0]) addSlide(item.imageURL.urlList[0]);
+          else if (item && item.display_image && item.display_image.url_list && item.display_image.url_list[0]) addSlide(item.display_image.url_list[0]);
+          else if (item && item.image_url) addSlide(item.image_url);
+        });
+      });
+
+      return slides;
     }
 
     function pickVideoFromMedias(medias) {
@@ -4464,7 +4691,7 @@
       if (data.success === false) {
         var failMsg = data.message || 'API request failed';
         if (isAdminBlockedError(failMsg)) {
-          throw new Error('The admin / creator has not allowed downloading this video.');
+          throw new Error('This video cannot be downloaded — the creator or platform restricted saving it.');
         }
         throw new Error(failMsg);
       }
@@ -4474,7 +4701,7 @@
       if (payload.error === true) {
         var blockMsg = payload.message || data.message || 'Video could not be downloaded';
         if (isAdminBlockedError(blockMsg)) {
-          throw new Error('The admin / creator has not allowed downloading this video.');
+          throw new Error('This video cannot be downloaded — the creator or platform restricted saving it.');
         }
         throw new Error(blockMsg);
       }
@@ -4606,6 +4833,13 @@
         source: formatQualityLabel(payload.source || data.source || ''),
         duration: duration
       };
+
+      var slides = extractSlidesFromPayload(payload, mediaSources);
+      if (slides.length >= 2 || (slides.length >= 1 && !downloadUrl)) {
+        normalized.isSlideshow = true;
+        normalized.slides = slides;
+        if (!normalized.thumbnail && slides[0]) normalized.thumbnail = slides[0].url;
+      }
 
       return assignVideoTiers(normalized);
     }

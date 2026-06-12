@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const CACHE_PREFIX = 'omni:link:';
 const RATE_PREFIX = 'omni:rl:';
 const DEFAULT_CACHE_TTL_SEC = parseInt(process.env.LINK_CACHE_TTL_SEC || String(4 * 60 * 60), 10);
-const DEFAULT_RATE_LIMIT = parseInt(process.env.LINK_RATE_LIMIT_PER_HOUR || '30', 10);
+const DEFAULT_RATE_LIMIT = parseInt(process.env.LINK_RATE_LIMIT_PER_HOUR || '120', 10);
 const RATE_WINDOW_SEC = 3600;
 
 const memCache = new Map();
@@ -182,19 +182,6 @@ async function resolveDownloadWithCache(videoUrl, options) {
   const clientIp = options.clientIp || 'unknown';
 
   if (!refresh) {
-    const rate = await checkRateLimit(clientIp);
-    if (!rate.ok) {
-      return {
-        status: 429,
-        data: {
-          error: 'Too many requests',
-          message: 'You are fetching links very quickly. Please wait a minute and try again.',
-        },
-        rateLimit: null,
-        fromCache: false,
-      };
-    }
-
     const cached = await getCachedLink(videoUrl);
     if (cached) {
       return {
@@ -206,6 +193,19 @@ async function resolveDownloadWithCache(videoUrl, options) {
     }
   } else {
     await invalidateCachedLink(videoUrl);
+  }
+
+  const rate = await checkRateLimit(clientIp);
+  if (!rate.ok) {
+    return {
+      status: 429,
+      data: {
+        error: 'Too many requests',
+        message: 'Too many new video lookups from your network. Cached links still work — wait a minute or try again.',
+      },
+      rateLimit: null,
+      fromCache: false,
+    };
   }
 
   const { proxyDownload } = require('./api-proxy');

@@ -430,6 +430,9 @@
         cache: 'no-store',
       });
       if (res.status === 401) { setToken(''); showLogin(); return; }
+      if (res.status === 502 || res.status === 504) {
+        throw new Error('Server timeout (' + res.status + ') — retrying automatically…');
+      }
 
       var data = await res.json();
       if (!res.ok && !data.analytics) {

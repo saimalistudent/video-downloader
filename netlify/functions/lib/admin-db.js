@@ -747,7 +747,7 @@ async function getAnalyticsBundle() {
   const todayStart = dayStartMs(0);
   const weekStart = dayStartMs(-6);
   const monthStart = dayStartMs(-29);
-  const events30 = await getEventsSince(monthStart, 4000);
+  const events30 = await getEventsSince(monthStart, 2000);
 
   const todayEvents = events30.filter(function (e) { return e.created_at >= todayStart; });
   const weekEvents = events30.filter(function (e) { return e.created_at >= weekStart; });
@@ -1128,8 +1128,8 @@ function enrichRapidApiPlan(plan, rapidLive, eventUsed) {
 }
 
 async function getDashboardStats() {
-  const rapidLivePromise = fetchRapidApiUsageLive();
-  const netlifyLivePromise = fetchNetlifyBandwidth();
+  const rapidLivePromise = fetchRapidApiUsageLive().catch(function () { return null; });
+  const netlifyLivePromise = fetchNetlifyBandwidth().catch(function () { return null; });
 
   let storageError = null;
   try {
@@ -1208,8 +1208,8 @@ async function getDashboardStats() {
       countAllEventsSince(todayStart),
       getRecentEvents(50),
       getAllPlans(),
-      fetchNetlifyBandwidth(),
-      fetchUpstashUsage(),
+      Promise.resolve(netlifyLiveEarly),
+      fetchUpstashUsage().catch(function () { return null; }),
     ]);
   } catch (err) {
     console.error('[admin-db] stats query:', err.message);
