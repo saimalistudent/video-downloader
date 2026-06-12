@@ -1,4 +1,4 @@
-const { cors, getApiKey, sendJson, slotStats } = require('../lib/api-proxy');
+const { cors, getApiKey, sendJson } = require('../lib/api-proxy');
 
 module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -20,6 +20,5 @@ module.exports = async function handler(req, res) {
     platforms: ['tiktok', 'instagram', 'facebook', 'youtube'],
     api_configured: Boolean(apiKey),
     key_length: apiKey ? apiKey.length : 0,
-    queue: slotStats(),
   });
 };

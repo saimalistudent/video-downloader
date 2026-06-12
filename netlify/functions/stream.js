@@ -1,6 +1,32 @@
-const { normalizeVideoUrl, refererForUrl } = require('./lib/api-proxy');
+const {
+  normalizeVideoUrl,
+  preferDirectStream,
+  PROXY_MAX_BYTES,
+  upstreamHeaders,
+} = require('./lib/api-proxy');
 const { corsHeaders, jsonResponse, emptyResponse, queryParam } = require('./lib/http');
 const { incrementDownloadCount } = require('./lib/stats-store');
+
+async function probeContentLength(mediaUrl) {
+  try {
+    const head = await fetch(mediaUrl, { method: 'HEAD', headers: upstreamHeaders(mediaUrl) });
+    if (head.ok) {
+      const len = parseInt(head.headers.get('content-length') || '0', 10);
+      if (len > 0) return len;
+    }
+  } catch (err) {
+    /* HEAD not supported on some CDNs — fall through to GET */
+  }
+  return 0;
+}
+
+function directDownloadJson(mediaUrl, message) {
+  return jsonResponse(200, {
+    use_direct: true,
+    direct_url: mediaUrl,
+    message: message || 'Opening direct download…',
+  });
+}
 
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
@@ -20,12 +46,30 @@ exports.handler = async (event) => {
       return jsonResponse(400, { error: 'Missing url parameter' });
     }
 
+    if (preferDirectStream(mediaUrl)) {
+      try {
+        await incrementDownloadCount();
+      } catch (err) {
+        console.error('[stream] stats increment skipped:', err.message);
+      }
+      return directDownloadJson(
+        mediaUrl,
+        'HD video — opening direct download (YouTube/Facebook/large file).'
+      );
+    }
+
+    const knownLength = await probeContentLength(mediaUrl);
+    if (knownLength > PROXY_MAX_BYTES) {
+      try {
+        await incrementDownloadCount();
+      } catch (err) {
+        console.error('[stream] stats increment skipped:', err.message);
+      }
+      return directDownloadJson(mediaUrl, 'Large file — opening direct download…');
+    }
+
     const upstream = await fetch(mediaUrl, {
-      headers: {
-        Referer: refererForUrl(mediaUrl),
-        Accept: '*/*',
-        'User-Agent': 'OmniDownloader/1.0',
-      },
+      headers: upstreamHeaders(mediaUrl),
     });
 
     if (!upstream.ok) {
@@ -38,15 +82,9 @@ exports.handler = async (event) => {
       return jsonResponse(upstream.status, { error: `Upstream HTTP ${upstream.status}` });
     }
 
-    const MAX_PROXY_BYTES = 4 * 1024 * 1024;
     const contentLengthHeader = upstream.headers.get('content-length');
-    if (contentLengthHeader && parseInt(contentLengthHeader, 10) > MAX_PROXY_BYTES) {
-      return jsonResponse(413, {
-        error: 'Video too large for server proxy',
-        message: 'Opening direct download…',
-        direct_url: mediaUrl,
-        use_direct: true,
-      });
+    if (contentLengthHeader && parseInt(contentLengthHeader, 10) > PROXY_MAX_BYTES) {
+      return directDownloadJson(mediaUrl);
     }
 
     try {
@@ -59,16 +97,11 @@ exports.handler = async (event) => {
     const contentLength = upstream.headers.get('content-length');
     const buffer = Buffer.from(await upstream.arrayBuffer());
 
-    if (buffer.length > MAX_PROXY_BYTES) {
-      return jsonResponse(413, {
-        error: 'Video too large for server proxy',
-        message: 'Opening direct download…',
-        direct_url: mediaUrl,
-        use_direct: true,
-      });
+    if (buffer.length > PROXY_MAX_BYTES) {
+      return directDownloadJson(mediaUrl);
     }
-    const safeName = filename.replace(/"/g, '');
 
+    const safeName = filename.replace(/"/g, '');
     const headers = corsHeaders({
       'Content-Type': contentType,
       'Content-Disposition': `attachment; filename="${safeName}"`,

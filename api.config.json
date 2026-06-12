@@ -6,7 +6,6 @@
   "path": "/v1/social/autolink",
   "body_key": "url",
   "platforms": ["tiktok", "instagram", "facebook", "youtube"],
-  "max_concurrent_requests": 4,
   "note": "Production API — do not change without updating RESTORE.md",
   "backend_url": "",
   "_backend_url_help": "Netlify Drop users: deploy omni-downloader-vercel.zip to Vercel, set RAPIDAPI_KEY, then paste your Vercel URL here (e.g. https://your-app.vercel.app)"

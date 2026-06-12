@@ -1,4 +1,3 @@
-const { slotStats } = require('./lib/api-proxy');
 const { jsonResponse, emptyResponse } = require('./lib/http');
 
 exports.handler = async (event) => {
@@ -10,5 +9,5 @@ exports.handler = async (event) => {
     return jsonResponse(405, { error: 'Method not allowed' });
   }
 
-  return jsonResponse(200, slotStats());
+  return jsonResponse(200, { unlimited: true });
 };

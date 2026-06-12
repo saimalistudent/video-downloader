@@ -1,9 +1,11 @@
 # Omni Downloader — https://omnidownloader.netlify.app
 User-agent: *
 Allow: /
+Disallow: /admin/
 
 User-agent: Googlebot
 Allow: /
+Disallow: /admin/
 
 User-agent: Bingbot
 Allow: /

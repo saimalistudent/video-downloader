@@ -12,3 +12,8 @@ _netlify_zip_stage/
 
 # Local Netlify folder
 .netlify
+
+# Admin SQLite database (local dev)
+data/admin.db
+data/sessions.db
+data/

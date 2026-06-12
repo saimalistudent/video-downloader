@@ -5,7 +5,16 @@
     "node": ">=18"
   },
   "scripts": {
-    "dev": "npx netlify-cli dev --port 8080",
+    "start": "node server.js",
+    "dev": "node server.js",
+    "dev:netlify": "npx netlify-cli dev --port 8080",
     "test:api": "node scripts/test-api.js"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0",
+    "connect-sqlite3": "^0.9.15",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "sqlite3": "^5.1.7"
   }
 }

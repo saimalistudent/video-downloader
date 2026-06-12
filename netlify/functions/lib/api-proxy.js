@@ -4,11 +4,8 @@
 const RAPIDAPI_HOST = 'social-download-all-in-one.p.rapidapi.com';
 const RAPIDAPI_PATH = '/v1/social/autolink';
 const RAPIDAPI_SUBSCRIBE_URL = 'https://rapidapi.com/aiovod/api/social-download-all-in-one';
-const MAX_SLOTS = parseInt(process.env.MAX_API_SLOTS || '4', 10);
 const FETCH_TIMEOUT_MS = parseInt(process.env.RAPIDAPI_TIMEOUT_MS || '22000', 10);
 const MAX_RETRIES = 1;
-
-let activeSlots = 0;
 
 function getApiKey() {
   let key = String(process.env.RAPIDAPI_KEY || '').trim();
@@ -19,24 +16,6 @@ function getApiKey() {
     key = key.slice(1, -1).trim();
   }
   return key;
-}
-
-function slotStats() {
-  return {
-    active: activeSlots,
-    max: MAX_SLOTS,
-    available: Math.max(0, MAX_SLOTS - activeSlots),
-  };
-}
-
-function acquireSlot() {
-  if (activeSlots >= MAX_SLOTS) return false;
-  activeSlots += 1;
-  return true;
-}
-
-function releaseSlot() {
-  activeSlots = Math.max(0, activeSlots - 1);
 }
 
 function ensureApiKey() {
@@ -67,6 +46,30 @@ function refererForUrl(mediaUrl) {
   if (host.includes('facebook') || host.includes('fbcdn')) return 'https://www.facebook.com/';
   if (host.includes('googlevideo') || host.includes('youtube')) return 'https://www.youtube.com/';
   return 'https://www.google.com/';
+}
+
+const PROXY_MAX_BYTES = 4 * 1024 * 1024;
+
+function preferDirectStream(mediaUrl) {
+  try {
+    const parsed = new URL(mediaUrl);
+    const host = parsed.hostname.toLowerCase();
+    const path = (parsed.pathname || '').toLowerCase();
+    if (/googlevideo|youtube|gvt1\.com|ytimg/.test(host)) return true;
+    if (/fbcdn|facebook\.com|fb\.watch/.test(host)) return true;
+    if (/\.m3u8(\?|$)/.test(path)) return true;
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+function upstreamHeaders(mediaUrl) {
+  return {
+    Referer: refererForUrl(mediaUrl),
+    Accept: '*/*',
+    'User-Agent': 'OmniDownloader/1.0',
+  };
 }
 
 function sleep(ms) {
@@ -223,11 +226,11 @@ module.exports = {
   RAPIDAPI_HOST,
   RAPIDAPI_SUBSCRIBE_URL,
   getApiKey,
-  slotStats,
-  acquireSlot,
-  releaseSlot,
   ensureApiKey,
   normalizeVideoUrl,
   refererForUrl,
+  preferDirectStream,
+  PROXY_MAX_BYTES,
+  upstreamHeaders,
   proxyDownload,
 };

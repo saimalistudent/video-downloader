@@ -1,11 +1,8 @@
 const {
-  acquireSlot,
   ensureApiKey,
   getApiKey,
   normalizeVideoUrl,
   proxyDownload,
-  releaseSlot,
-  slotStats,
 } = require('./lib/api-proxy');
 const { jsonResponse, emptyResponse, parseJsonBody, queryParam } = require('./lib/http');
 
@@ -49,43 +46,46 @@ exports.handler = async (event, context) => {
       return jsonResponse(500, keyCheck.error);
     }
 
-    if (!acquireSlot()) {
-      const stats = slotStats();
-      return jsonResponse(429, {
-        wait: true,
-        message: 'The website is experiencing high traffic. Please wait — your download will begin shortly.',
-        active: stats.active,
-        max: stats.max,
-        retry_after: 2,
-      });
-    }
+    console.log('[download] fetching video metadata, key length:', getApiKey().length);
+    const started = Date.now();
+    const { status, data } = await proxyDownload(videoUrl);
+    const durationMs = Date.now() - started;
 
     try {
-      console.log('[download] fetching video metadata, key length:', getApiKey().length);
-      const { status, data } = await proxyDownload(videoUrl);
-
-      if (!data || (typeof data === 'object' && !Object.keys(data).length)) {
-        return jsonResponse(status || 502, {
-          error: 'Empty RapidAPI result',
-          message: 'RapidAPI returned no usable data for this URL.',
-          http_status: status,
-        });
-      }
-
-      return jsonResponse(status, data);
-    } catch (err) {
-      console.error('[download] proxyDownload error:', err);
-      return jsonResponse(502, {
-        error: 'Download proxy failed',
-        message: err.message || String(err),
+      const { trackApiCall } = require('./lib/admin-track');
+      await trackApiCall({
+        platform: 'api',
+        success: status >= 200 && status < 400 && data && !data.error,
+        status: status,
+        duration_ms: durationMs,
+        message: status >= 400 ? 'RapidAPI error ' + status : 'RapidAPI metadata fetch',
       });
-    } finally {
-      releaseSlot();
+    } catch (trackErr) {
+      console.warn('[download] admin track skipped:', trackErr.message);
     }
+
+    if (!data || (typeof data === 'object' && !Object.keys(data).length)) {
+      return jsonResponse(status || 502, {
+        error: 'Empty RapidAPI result',
+        message: 'RapidAPI returned no usable data for this URL.',
+        http_status: status,
+      });
+    }
+
+    return jsonResponse(status, data);
   } catch (err) {
-    console.error('[download] unhandled error:', err);
-    return jsonResponse(500, {
-      error: 'Function error',
+    console.error('[download] error:', err);
+    try {
+      const { trackApiCall } = require('./lib/admin-track');
+      await trackApiCall({
+        platform: 'api',
+        success: false,
+        status: 502,
+        message: err.message || 'Download proxy failed',
+      });
+    } catch (trackErr) { /* skip */ }
+    return jsonResponse(502, {
+      error: 'Download proxy failed',
       message: err.message || String(err),
     });
   }

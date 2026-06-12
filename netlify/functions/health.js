@@ -1,4 +1,4 @@
-const { getApiKey, slotStats } = require('./lib/api-proxy');
+const { getApiKey } = require('./lib/api-proxy');
 const { jsonResponse, emptyResponse } = require('./lib/http');
 
 exports.handler = async (event) => {
@@ -20,6 +20,5 @@ exports.handler = async (event) => {
     platforms: ['tiktok', 'instagram', 'facebook', 'youtube'],
     api_configured: Boolean(apiKey),
     key_length: apiKey ? apiKey.length : 0,
-    queue: slotStats(),
   });
 };

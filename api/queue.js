@@ -1,4 +1,4 @@
-const { cors, sendJson, slotStats } = require('../lib/api-proxy');
+const { cors, sendJson } = require('../lib/api-proxy');
 
 module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -10,5 +10,5 @@ module.exports = async function handler(req, res) {
     return sendJson(res, 405, { error: 'Method not allowed' });
   }
 
-  return sendJson(res, 200, slotStats());
+  return sendJson(res, 200, { unlimited: true });
 };

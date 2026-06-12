@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Omni Admin Panel</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: #0b0d14;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 1rem; }
+    .login-wrap {
+      min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem;
+    }
+    .login-box {
+      width: 100%; max-width: 380px; padding: 2rem; border-radius: 1rem;
+      background: linear-gradient(160deg, #151823, #10121a);
+      border: 1px solid rgba(99,102,241,.25);
+      box-shadow: 0 20px 50px rgba(0,0,0,.45);
+    }
+    .login-box h1 { font-size: 1.35rem; margin-bottom: .35rem; }
+    .login-box p { color: #94a3b8; font-size: .875rem; margin-bottom: 1.25rem; }
+    label { display: block; font-size: .75rem; color: #94a3b8; margin-bottom: .35rem; }
+    input {
+      width: 100%; padding: .7rem .85rem; border-radius: .5rem; border: 1px solid #334155;
+      background: #0f1117; color: #fff; margin-bottom: .85rem; font-size: .9375rem;
+    }
+    input:focus { outline: none; border-color: #6366f1; }
+    .btn {
+      width: 100%; padding: .75rem; border: none; border-radius: .5rem;
+      background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff;
+      font-weight: 600; cursor: pointer; font-size: .9375rem;
+    }
+    .btn:hover { filter: brightness(1.08); }
+    .btn-sm { width: auto; padding: .45rem .85rem; font-size: .8125rem; }
+    .btn-ghost { background: transparent; border: 1px solid #334155; }
+    .err { color: #f87171; font-size: .8125rem; margin-top: .5rem; min-height: 1.2rem; }
+    .hidden { display: none !important; }
+
+    .topbar {
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+      gap: .75rem; margin-bottom: 1.25rem; padding-bottom: 1rem;
+      border-bottom: 1px solid rgba(148,163,184,.15);
+    }
+    .topbar h1 { font-size: 1.25rem; }
+    .live-dot {
+      display: inline-flex; align-items: center; gap: .4rem; font-size: .8125rem; color: #86efac;
+    }
+    .live-dot::before {
+      content: ''; width: 8px; height: 8px; border-radius: 50%; background: #22c55e;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    .grid { display: grid; gap: .85rem; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 1.25rem; }
+    .card {
+      background: #151823; border: 1px solid rgba(148,163,184,.12); border-radius: .75rem; padding: 1rem;
+    }
+    .card-label { font-size: .75rem; color: #94a3b8; margin-bottom: .25rem; }
+    .card-value { font-size: 1.65rem; font-weight: 700; line-height: 1.1; }
+    .card-sub { font-size: .75rem; color: #64748b; margin-top: .25rem; }
+    .card.success .card-value { color: #86efac; }
+    .card.warn .card-value { color: #fbbf24; }
+    .card.danger .card-value { color: #f87171; }
+
+    .section { margin-bottom: 1.25rem; }
+    .section h2 { font-size: 1rem; margin-bottom: .65rem; color: #cbd5e1; }
+
+    .plan-grid { display: grid; gap: .85rem; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .plan-card { background: #151823; border: 1px solid rgba(148,163,184,.12); border-radius: .75rem; padding: 1rem; }
+    .plan-head { display: flex; justify-content: space-between; align-items: start; gap: .5rem; margin-bottom: .65rem; }
+    .plan-name { font-weight: 600; font-size: .9375rem; }
+    .plan-badge { font-size: .65rem; text-transform: uppercase; padding: .15rem .45rem; border-radius: 999px; font-weight: 700; }
+    .plan-badge.ok { background: rgba(34,197,94,.15); color: #86efac; }
+    .plan-badge.warning { background: rgba(251,191,36,.15); color: #fbbf24; }
+    .plan-badge.critical { background: rgba(248,113,113,.15); color: #f87171; }
+    .bar { height: 8px; background: #1e293b; border-radius: 999px; overflow: hidden; margin: .5rem 0; }
+    .bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #6366f1, #818cf8); transition: width .4s; }
+    .bar-fill.warning { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+    .bar-fill.critical { background: linear-gradient(90deg, #ef4444, #f87171); }
+    .bar-fill.validity { background: linear-gradient(90deg, #059669, #34d399); }
+    .plan-meta { font-size: .75rem; color: #64748b; }
+
+    .feed, .errors { max-height: 320px; overflow-y: auto; }
+    .feed-item, .error-item {
+      display: flex; gap: .65rem; padding: .65rem .75rem; border-bottom: 1px solid rgba(148,163,184,.08);
+      font-size: .8125rem;
+    }
+    .feed-item:last-child, .error-item:last-child { border-bottom: none; }
+    .feed-time { color: #64748b; white-space: nowrap; font-size: .75rem; min-width: 4.5rem; }
+    .feed-type {
+      font-size: .65rem; font-weight: 700; text-transform: uppercase; padding: .1rem .35rem;
+      border-radius: .25rem; background: rgba(99,102,241,.15); color: #a5b4fc; align-self: start;
+    }
+    .feed-type.fail { background: rgba(248,113,113,.15); color: #fca5a5; }
+    .feed-msg { flex: 1; color: #cbd5e1; word-break: break-word; }
+    .feed-platform { color: #64748b; font-size: .75rem; }
+
+    .storage-note { font-size: .75rem; color: #64748b; text-align: right; margin-top: .5rem; }
+    .verified-banner {
+      font-size: .8125rem; color: #86efac; background: rgba(34,197,94,.08);
+      border: 1px solid rgba(34,197,94,.2); border-radius: .5rem;
+      padding: .55rem .75rem; margin-bottom: 1rem;
+    }
+
+    @media (max-width: 640px) {
+      .card-value { font-size: 1.35rem; }
+      .topbar h1 { font-size: 1.05rem; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="login-view" class="login-wrap">
+  <div class="login-box">
+    <h1>Omni Admin Panel</h1>
+    <p>Secure login — real-time stats &amp; plan usage</p>
+    <form id="login-form">
+      <label for="username">Username</label>
+      <input id="username" name="username" autocomplete="username" value="admin" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button type="submit" class="btn">Sign In</button>
+      <p id="login-error" class="err"></p>
+    </form>
+  </div>
+</div>
+
+<div id="dashboard-view" class="hidden">
+  <div class="wrap">
+    <div class="topbar">
+      <div>
+        <h1>Omni Downloader — Admin</h1>
+        <span class="live-dot" id="live-label">Live</span>
+      </div>
+      <div style="display:flex;gap:.5rem;align-items:center;">
+        <span id="last-updated" style="font-size:.75rem;color:#64748b;"></span>
+        <button type="button" class="btn btn-sm btn-ghost" id="logout-btn">Logout</button>
+      </div>
+    </div>
+
+    <p id="verified-banner" class="verified-banner hidden">● Live real data — every number comes from actual user actions on your site</p>
+
+    <div class="grid" id="kpi-grid">
+      <div class="card"><div class="card-label">Visitors Today</div><div class="card-value" id="kpi-visitors">—</div><div class="card-sub" id="kpi-visitors-week"></div></div>
+      <div class="card success"><div class="card-label">Downloads Today</div><div class="card-value" id="kpi-downloads">—</div><div class="card-sub" id="kpi-attempts"></div></div>
+      <div class="card"><div class="card-label">Success Rate</div><div class="card-value" id="kpi-success">—</div><div class="card-sub" id="kpi-success-sub">Video downloads today</div></div>
+      <div class="card warn"><div class="card-label">Errors Today</div><div class="card-value" id="kpi-errors">—</div><div class="card-sub" id="kpi-fetch-fail"></div></div>
+    </div>
+
+    <div class="section">
+      <h2>Plan Usage — Upgrade when needed</h2>
+      <div class="plan-grid" id="plan-grid"></div>
+    </div>
+
+    <div class="section">
+      <h2>Live Activity Feed</h2>
+      <div class="card feed" id="activity-feed"></div>
+    </div>
+
+    <div class="section">
+      <h2>Recent Errors</h2>
+      <div class="card errors" id="error-feed"></div>
+    </div>
+
+    <p class="storage-note" id="storage-note"></p>
+  </div>
+</div>
+
+<script>
+(function () {
+  var TOKEN_KEY = 'omni_admin_token';
+  var API_LOGIN = '/api/admin/login';
+  var API_DASH = '/api/admin/dashboard';
+  var pollTimer = null;
+
+  function $(id) { return document.getElementById(id); }
+
+  function getToken() {
+    try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; }
+  }
+
+  function setToken(t) {
+    try {
+      if (t) localStorage.setItem(TOKEN_KEY, t);
+      else localStorage.removeItem(TOKEN_KEY);
+    } catch (e) {}
+  }
+
+  function showLogin() {
+    $('login-view').classList.remove('hidden');
+    $('dashboard-view').classList.add('hidden');
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  function showDashboard() {
+    $('login-view').classList.add('hidden');
+    $('dashboard-view').classList.remove('hidden');
+    refreshDashboard();
+    if (!pollTimer) pollTimer = setInterval(refreshDashboard, 4000);
+  }
+
+  function fmtTime(ts) {
+    if (!ts) return '—';
+    var d = new Date(ts);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  function fmtNum(n) { return (parseInt(n, 10) || 0).toLocaleString(); }
+
+  function renderPlans(plans) {
+    var grid = $('plan-grid');
+    if (!plans || !plans.length) {
+      grid.innerHTML = '<p style="color:#64748b;font-size:.875rem;">No plans configured. Set env vars in Netlify.</p>';
+      return;
+    }
+    grid.innerHTML = plans.map(function (p) {
+      var isValidity = p.display_mode === 'validity';
+      var pct = p.percent != null ? p.percent : 0;
+      var barClass = !isValidity && pct >= 90 ? 'critical' : !isValidity && pct >= 75 ? 'warning' : isValidity ? 'validity' : '';
+      var badgeClass = p.status || 'ok';
+      var badgeText = p.badge_label != null ? p.badge_label : (p.percent != null ? pct + '% used' : 'Active');
+      if (p.live === false && p.provider === 'netlify') badgeText = 'Not connected';
+      var meta = p.meta || {};
+      var metaHtml = '';
+      if (meta.host) metaHtml += 'Host: ' + meta.host + '<br>';
+      if (meta.registrar) metaHtml += 'Registrar: ' + meta.registrar + '<br>';
+      if (meta.expires && !/\.netlify\.app$/i.test(p.name || '')) metaHtml += 'Expires: ' + meta.expires + '<br>';
+      if (meta.site_url) metaHtml += 'Site: ' + meta.site_url + '<br>';
+      if (meta.source) metaHtml += '<span style="color:#94a3b8;">Source: ' + escapeHtml(meta.source) + '</span><br>';
+      if (p.live) metaHtml += '<span style="color:#86efac;">● Live data</span>';
+
+      var barHtml = '';
+      if (isValidity) {
+        if (p.health_bar != null) {
+          barHtml = '<div class="bar"><div class="bar-fill validity" style="width:' + p.health_bar + '%"></div></div>';
+        }
+      } else {
+        barHtml = '<div class="bar"><div class="bar-fill ' + barClass + '" style="width:' + Math.min(100, pct) + '%"></div></div>';
+      }
+
+      var statHtml = '';
+      if (isValidity) {
+        statHtml = '<div class="plan-meta">' + escapeHtml(p.unit || '') + '</div>';
+        if (p.used != null && p.limit_value) {
+          statHtml += '<div class="plan-meta">' + escapeHtml(String(p.used)) + ' days · renews ' + escapeHtml(String(p.limit_value)) + '</div>';
+        }
+      } else {
+        var used = typeof p.used === 'number' ? (p.used % 1 === 0 ? p.used : p.used.toFixed(1)) : p.used;
+        var limit = p.limit_value || 0;
+        statHtml = '<div class="plan-meta">' + used + ' / ' + limit + ' ' + escapeHtml(p.unit || '') + '</div>';
+      }
+
+      return '<div class="plan-card">' +
+        '<div class="plan-head"><div class="plan-name">' + escapeHtml(p.name) + '</div>' +
+        '<span class="plan-badge ' + badgeClass + '">' + escapeHtml(badgeText) + '</span></div>' +
+        barHtml +
+        statHtml +
+        (metaHtml ? '<div class="plan-meta" style="margin-top:.35rem;">' + metaHtml + '</div>' : '') +
+        '</div>';
+    }).join('');
+  }
+
+  function renderFeed(containerId, items, isError) {
+    var el = $(containerId);
+    if (!items || !items.length) {
+      el.innerHTML = '<p style="padding:1rem;color:#64748b;font-size:.875rem;">No activity yet.</p>';
+      return;
+    }
+    el.innerHTML = items.map(function (item) {
+      var fail = !item.success || isError;
+      return '<div class="' + (isError ? 'error-item' : 'feed-item') + '">' +
+        '<span class="feed-time">' + fmtTime(item.created_at) + '</span>' +
+        '<span class="feed-type' + (fail ? ' fail' : '') + '">' + escapeHtml(item.event_type || 'event') + '</span>' +
+        '<div class="feed-msg">' + escapeHtml(item.message || '') +
+        (item.platform ? '<div class="feed-platform">' + escapeHtml(item.platform) + '</div>' : '') +
+        '</div></div>';
+    }).join('');
+  }
+
+  function escapeHtml(s) {
+    var d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+  }
+
+  async function refreshDashboard() {
+    var token = getToken();
+    if (!token) { showLogin(); return; }
+
+    try {
+      var res = await fetch(API_DASH, {
+        credentials: 'include',
+        headers: { Authorization: 'Bearer ' + token },
+        cache: 'no-store',
+      });
+      if (res.status === 401) { setToken(''); showLogin(); return; }
+      var data = await res.json();
+      if (!data.ok && data.error) throw new Error(data.error);
+
+      var s = data.summary || {};
+      var banner = $('verified-banner');
+      if (banner) {
+        banner.classList.remove('hidden');
+        var tier = data.plan_tier || data.auto_tier || 'free';
+        banner.textContent = '● Real live data · Plan: ' + tier + ' · ' + fmtNum(s.events_today || 0) + ' events today · ' + (data.storage || 'sqlite3');
+      }
+
+      $('kpi-visitors').textContent = fmtNum(s.visitors_today);
+      $('kpi-visitors-week').textContent = fmtNum(s.visitors_week) + ' unique visitors this week';
+      $('kpi-downloads').textContent = fmtNum(s.downloads_today);
+      $('kpi-attempts').textContent = fmtNum(s.download_clicks_today || 0) + ' download button clicks';
+      $('kpi-success').textContent = s.success_rate != null ? s.success_rate + '%' : '—';
+      $('kpi-success-sub').textContent = s.success_rate_note || 'No download clicks yet today';
+      if (s.fetch_rate != null && $('kpi-success-sub')) {
+        $('kpi-success-sub').textContent += ' · Fetch: ' + s.fetch_rate + '% (' + (s.fetch_rate_note || '') + ')';
+      }
+
+      var errCard = $('kpi-errors').closest('.card');
+      $('kpi-errors').textContent = fmtNum(s.errors_today);
+      $('kpi-fetch-fail').textContent = fmtNum(s.fetch_failures_today) + ' fetch failures';
+      errCard.className = 'card' + (s.errors_today > 0 ? ' danger' : '');
+
+      renderPlans(data.plans);
+      renderFeed('activity-feed', data.recent_activity, false);
+      renderFeed('error-feed', data.recent_errors, true);
+
+      $('last-updated').textContent = 'Updated ' + fmtTime(data.updated_at);
+      $('storage-note').textContent = 'Storage: ' + (data.storage || 'sqlite') + ' · Auto-refresh every 4s';
+    } catch (err) {
+      $('live-label').textContent = 'Reconnecting…';
+      $('live-label').style.color = '#fbbf24';
+    }
+  }
+
+  $('login-form').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    $('login-error').textContent = '';
+    try {
+      var res = await fetch(API_LOGIN, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: $('username').value.trim(),
+          password: $('password').value,
+        }),
+      });
+      var data = await res.json();
+      if (!res.ok || !data.token) {
+        $('login-error').textContent = data.error || 'Login failed';
+        return;
+      }
+      setToken(data.token);
+      showDashboard();
+    } catch (err) {
+      $('login-error').textContent = 'Network error — is the server running?';
+    }
+  });
+
+  $('logout-btn').addEventListener('click', async function () {
+    try {
+      await fetch('/api/admin/logout', { method: 'POST', credentials: 'include' });
+    } catch (e) {}
+    setToken('');
+    showLogin();
+  });
+
+  if (getToken()) showDashboard();
+})();
+</script>
+</body>
+</html>

@@ -2,10 +2,33 @@ const {
   cors,
   extractQueryValue,
   normalizeVideoUrl,
-  refererForUrl,
+  preferDirectStream,
+  PROXY_MAX_BYTES,
   sendJson,
+  upstreamHeaders,
 } = require('../lib/api-proxy');
 const { incrementDownloadCount } = require('../lib/stats-store');
+
+async function probeContentLength(mediaUrl) {
+  try {
+    const head = await fetch(mediaUrl, { method: 'HEAD', headers: upstreamHeaders(mediaUrl) });
+    if (head.ok) {
+      const len = parseInt(head.headers.get('content-length') || '0', 10);
+      if (len > 0) return len;
+    }
+  } catch (err) {
+    /* HEAD not supported — fall through */
+  }
+  return 0;
+}
+
+function sendDirectJson(res, mediaUrl, message) {
+  return sendJson(res, 200, {
+    use_direct: true,
+    direct_url: mediaUrl,
+    message: message || 'Opening direct download…',
+  });
+}
 
 module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -27,12 +50,23 @@ module.exports = async function handler(req, res) {
       return sendJson(res, 400, { error: 'Missing url parameter' });
     }
 
+    if (preferDirectStream(mediaUrl)) {
+      await incrementDownloadCount();
+      return sendDirectJson(
+        res,
+        mediaUrl,
+        'HD video — opening direct download (YouTube/Facebook/large file).'
+      );
+    }
+
+    const knownLength = await probeContentLength(mediaUrl);
+    if (knownLength > PROXY_MAX_BYTES) {
+      await incrementDownloadCount();
+      return sendDirectJson(res, mediaUrl, 'Large file — opening direct download…');
+    }
+
     const upstream = await fetch(mediaUrl, {
-      headers: {
-        Referer: refererForUrl(mediaUrl),
-        Accept: '*/*',
-        'User-Agent': 'OmniDownloader/1.0',
-      },
+      headers: upstreamHeaders(mediaUrl),
     });
 
     if (!upstream.ok) {
@@ -45,15 +79,9 @@ module.exports = async function handler(req, res) {
       return sendJson(res, upstream.status, { error: `Upstream HTTP ${upstream.status}` });
     }
 
-    const MAX_PROXY_BYTES = 4 * 1024 * 1024;
     const contentLengthHeader = upstream.headers.get('content-length');
-    if (contentLengthHeader && parseInt(contentLengthHeader, 10) > MAX_PROXY_BYTES) {
-      return sendJson(res, 413, {
-        error: 'Video too large for server proxy',
-        message: 'Opening direct download…',
-        direct_url: mediaUrl,
-        use_direct: true,
-      });
+    if (contentLengthHeader && parseInt(contentLengthHeader, 10) > PROXY_MAX_BYTES) {
+      return sendDirectJson(res, mediaUrl);
     }
 
     await incrementDownloadCount();
@@ -62,13 +90,8 @@ module.exports = async function handler(req, res) {
     const contentLength = upstream.headers.get('content-length');
     const buffer = Buffer.from(await upstream.arrayBuffer());
 
-    if (buffer.length > MAX_PROXY_BYTES) {
-      return sendJson(res, 413, {
-        error: 'Video too large for server proxy',
-        message: 'Opening direct download…',
-        direct_url: mediaUrl,
-        use_direct: true,
-      });
+    if (buffer.length > PROXY_MAX_BYTES) {
+      return sendDirectJson(res, mediaUrl);
     }
 
     cors(res);
