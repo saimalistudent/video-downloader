@@ -1,4 +1,4 @@
-const { getApiKey } = require('./lib/api-proxy');
+const { hasExternalBackend, getBackendConfig } = require('./lib/api-proxy');
 const { getLookupQueue } = require('./lib/lookup-queue');
 const throughputConfig = require('./lib/throughput-config');
 const { jsonResponse, emptyResponse } = require('./lib/http');
@@ -12,16 +12,17 @@ exports.handler = async (event) => {
     return jsonResponse(405, { error: 'Method not allowed' });
   }
 
-  const apiKey = getApiKey();
+  const backend = getBackendConfig();
 
   return jsonResponse(200, {
     ok: true,
     proxy: true,
     platform: 'netlify',
-    mode: 'social-download-all-in-one',
+    mode: 'omni-ytdlp',
     platforms: ['tiktok', 'instagram', 'facebook', 'youtube'],
-    api_configured: Boolean(apiKey),
-    key_length: apiKey ? apiKey.length : 0,
+    api_configured: hasExternalBackend(),
+    download_api: hasExternalBackend(),
+    backend_url: backend.url || null,
     lookup_queue: getLookupQueue().getStats(),
     throughput: {
       workers: throughputConfig.WORKER_COUNT,

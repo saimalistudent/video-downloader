@@ -1,13 +1,8 @@
 {
   "locked": true,
-  "provider": "social-download-all-in-one",
-  "host": "social-download-all-in-one.p.rapidapi.com",
-  "method": "POST",
-  "path": "/v1/social/autolink",
-  "body_key": "url",
+  "provider": "omni-ytdlp",
   "platforms": ["tiktok", "instagram", "facebook", "youtube"],
-  "note": "Frontend uses backend_url when health check passes; api_token sent as Bearer on download/stream",
   "backend_url": "https://spontaneous-salamander-418289.netlify.app",
   "api_token": "e2675cdba8f91034",
-  "_backend_url_help": "Separate API server — set OMNI_API_TOKEN there to match api_token"
+  "note": "Omni download API — all video metadata and streams go through this backend."
 }

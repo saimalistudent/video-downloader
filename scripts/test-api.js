@@ -1,6 +1,6 @@
 /**
  * Local API test — run: node scripts/test-api.js
- * Loads RAPIDAPI_KEY from .env in project root.
+ * Loads OMNI_BACKEND_URL / OMNI_API_TOKEN from .env in project root.
  */
 const fs = require('fs');
 const path = require('path');
@@ -24,7 +24,7 @@ if (fs.existsSync(envPath)) {
 
 process.env.NETLIFY = 'true';
 
-const { ensureApiKey, getApiKey, proxyDownload } = require('../netlify/functions/lib/api-proxy');
+const { ensureApiKey, hasExternalBackend, getBackendConfig, proxyDownload } = require('../netlify/functions/lib/api-proxy');
 const { jsonResponse } = require('../netlify/functions/lib/http');
 
 async function testDownloadHandler() {
@@ -60,8 +60,9 @@ async function testJsonResponse() {
 async function main() {
   console.log('Omni Downloader — API test\n');
 
-  const keyLen = getApiKey().length;
-  console.log('RAPIDAPI_KEY length:', keyLen || '(missing)');
+  const backend = getBackendConfig();
+  console.log('Download API configured:', hasExternalBackend());
+  console.log('Backend URL:', backend.url || '(missing)');
 
   const tests = [testJsonResponse, testDownloadHandler];
   let failed = 0;

@@ -1,6 +1,5 @@
 const {
   ensureApiKey,
-  getApiKey,
   normalizeVideoUrl,
 } = require('./lib/api-proxy');
 const { clientIpFromRequest } = require('./lib/link-cache');

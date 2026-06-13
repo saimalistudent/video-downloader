@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v17';
+const CACHE_VERSION = 'v20';
 const CACHE_NAME = 'omni-downloader-' + CACHE_VERSION;
 const SHELL = [
   '/',

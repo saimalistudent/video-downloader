@@ -1,4 +1,4 @@
-const { cors, getApiKey, sendJson } = require('../lib/api-proxy');
+const { cors, hasExternalBackend, getBackendConfig, sendJson } = require('../lib/api-proxy');
 
 module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -10,15 +10,16 @@ module.exports = async function handler(req, res) {
     return sendJson(res, 405, { error: 'Method not allowed' });
   }
 
-  const apiKey = getApiKey();
+  const backend = getBackendConfig();
 
   return sendJson(res, 200, {
     ok: true,
     proxy: true,
     locked: true,
-    mode: 'social-download-all-in-one',
+    mode: 'omni-ytdlp',
     platforms: ['tiktok', 'instagram', 'facebook', 'youtube'],
-    api_configured: Boolean(apiKey),
-    key_length: apiKey ? apiKey.length : 0,
+    api_configured: hasExternalBackend(),
+    download_api: hasExternalBackend(),
+    backend_url: backend.url || null,
   });
 };

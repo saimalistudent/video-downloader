@@ -1,4 +1,4 @@
-const { trackEvent, incrementPlanUsage, updateRapidApiFromLiveQuota } = require('./admin-db');
+const { trackEvent, incrementPlanUsage } = require('./admin-db');
 
 async function trackPageView(payload) {
   return trackEvent({
@@ -87,18 +87,14 @@ async function trackClientError(payload) {
 
 async function trackApiCall(payload) {
   try {
-    if (payload.rateLimit && payload.rateLimit.limit > 0) {
-      await updateRapidApiFromLiveQuota(payload.rateLimit);
-    } else {
-      await incrementPlanUsage('rapidapi', 1);
-    }
+    await incrementPlanUsage('download-api', 1);
   } catch (err) {
     console.warn('[admin-track] plan usage skipped:', err.message);
   }
   return trackEvent({
     event_type: payload.success === false ? 'api_fail' : 'api_call',
     platform: payload.platform || '',
-    message: payload.message || 'RapidAPI call',
+    message: payload.message || 'Download API call',
     success: payload.success !== false,
     meta: {
       status: payload.status || 0,

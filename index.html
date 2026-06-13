@@ -2039,7 +2039,7 @@
     <div class="rounded-lg border border-amber-500/30 bg-amber-950/40 px-3 py-2 text-amber-100 text-xs leading-relaxed space-y-2">
       <p class="m-0"><strong>Backend not connected.</strong> You used Netlify Drop — it cannot run the download API.</p>
       <p class="m-0"><strong>Option A (keep Netlify Drop):</strong> Run <code class="text-amber-50">SETUP-NETLIFY-DROP.bat</code> → paste your Vercel URL → re-upload folder to Netlify.</p>
-      <p class="m-0"><strong>Option B (recommended):</strong> Run <code class="text-amber-50">DEPLOY-NETLIFY.bat</code> → set <code class="text-amber-50">DOWNLOAD_API_KEY</code> → Redeploy.</p>
+      <p class="m-0"><strong>Option B (recommended):</strong> Run <code class="text-amber-50">DEPLOY-NETLIFY.bat</code> → set <code class="text-amber-50">OMNI_BACKEND_URL</code> + <code class="text-amber-50">OMNI_API_TOKEN</code> → Redeploy.</p>
     </div>
   </div>
 
@@ -2896,33 +2896,21 @@
         return false;
       }
 
-      var externalBase = await loadBackendConfigUrl();
-      if (externalBase && await probeHealth(externalBase + '/api/health')) {
-        applyApiBase(externalBase);
-        if (banner) banner.classList.add('hidden');
-        console.info('[Omni] External API backend:', externalBase);
-        return true;
-      }
+      await loadBackendConfigUrl();
+      applyApiBase('', { fullApi: true });
 
-      if (await probeHealth('/api/health')) {
-        applyApiBase('');
-        if (banner) banner.classList.add('hidden');
-        console.info('[Omni] Local API backend');
-        return true;
-      }
-
-      if (await probeHealth('/.netlify/functions/health')) {
+      var healthOk = await probeHealth('/api/health');
+      if (!healthOk) healthOk = await probeHealth('/.netlify/functions/health');
+      if (!healthOk) {
         API.download = '/.netlify/functions/download';
         API.stream = '/.netlify/functions/stream';
         API.size = '/.netlify/functions/size';
         API.queueStatus = '/api/queue/status';
-        if (banner) banner.classList.add('hidden');
-        console.info('[Omni] Netlify functions backend');
-        return true;
       }
 
-      if (banner) banner.classList.remove('hidden');
-      return false;
+      if (banner) banner.classList.add('hidden');
+      console.info('[Omni] Same-origin API', healthOk ? '(health ok)' : '(health skipped, using function paths)');
+      return true;
     }
 
     var apiInitPromise = initProductionApi();
@@ -3272,16 +3260,8 @@
 
     function startPrepareProgress(isAudio, label) {
       stopDownloadAnimTimers();
-      var started = Date.now();
       var baseTitle = label || (isAudio ? 'Preparing MP3…' : 'Preparing video…');
-      setDownloadProgress(null, baseTitle, 'Server is extracting your file…', 'preparing');
-      downloadAnimTimer = setInterval(function () {
-        var elapsed = Math.floor((Date.now() - started) / 1000);
-        var detail = elapsed > 2
-          ? ('Working on server · ' + elapsed + 's elapsed')
-          : 'Connecting to download server…';
-        setDownloadProgress(null, baseTitle, detail, 'preparing');
-      }, 900);
+      setDownloadProgress(null, baseTitle, 'Connecting to server…', 'preparing');
     }
 
     function endPrepareProgress() {
@@ -3293,8 +3273,9 @@
       if (track) track.classList.remove('is-indeterminate');
     }
 
-    function mapTransferPercent(rawPct) {
-      return Math.min(99, 12 + Math.round(Math.max(0, rawPct) * 0.87));
+    function mapTransferPercent(rawPct, hasKnownTotal) {
+      if (hasKnownTotal) return Math.min(99, Math.round(Math.max(0, rawPct)));
+      return Math.min(88, 8 + Math.round(Math.max(0, rawPct) * 0.5));
     }
 
     function enqueueUserDownload(jobFn) {
@@ -3499,13 +3480,12 @@
     }
 
     function buildTierDisplayLabel(baseLabel, variant) {
-      var q = formatVariantQuality(variant);
       var size = variant && variant.sizeLabel ? variant.sizeLabel : '';
-      var parts = [];
-      if (q) parts.push(q);
-      if (size) parts.push(size);
-      if (!parts.length) return baseLabel;
-      return baseLabel + ' (' + parts.join(' · ') + ')';
+      var q = formatVariantQuality(variant);
+      if (size && q) return baseLabel + ' · ' + size + ' · ' + q;
+      if (size) return baseLabel + ' · ' + size;
+      if (q) return baseLabel + ' (' + q + ')';
+      return baseLabel;
     }
 
     function assignVideoTiers(data) {
@@ -3570,12 +3550,12 @@
       if (!data) return data;
       var urls = [];
       (data.videoVariants || []).forEach(function (v) {
-        if (v.url && urls.indexOf(v.url) === -1) urls.push(v.url);
+        if (v.url && !v.sizeExact && urls.indexOf(v.url) === -1) urls.push(v.url);
       });
-      if (data.audioDownloadUrl && urls.indexOf(data.audioDownloadUrl) === -1) {
+      if (data.audioDownloadUrl && !data.audioSizeBytes && urls.indexOf(data.audioDownloadUrl) === -1) {
         urls.push(data.audioDownloadUrl);
       }
-      if (!urls.length) return data;
+      if (!urls.length) return assignVideoTiers(data);
 
       var results = await Promise.all(urls.map(function (url) {
         return probeUrlSize(url).then(function (bytes) {
@@ -3639,15 +3619,17 @@
         if (type === 'audio' || type === 'image' || type === 'photo') return;
 
         var height = getMediaHeight(m);
-        var sizeBytes = estimateMediaSize(m, durationSec);
+        var explicitSize = parseMediaSize(m);
+        var sizeBytes = explicitSize > 0 ? explicitSize : estimateMediaSize(m, durationSec);
+        var sizeExact = explicitSize > 0;
         var entry = {
           url: m.url,
           height: height,
           label: formatQualityLabel(m.quality || m.label) || (height ? height + 'p' : 'HD'),
           qualityKey: height || sizeBytes,
           sizeBytes: sizeBytes,
-          sizeLabel: sizeBytes > 0 ? formatBytes(sizeBytes, true) : '',
-          sizeExact: false,
+          sizeLabel: sizeBytes > 0 ? formatBytes(sizeBytes, !sizeExact) : '',
+          sizeExact: sizeExact,
           noWatermark: /no.?watermark/i.test(String(m.quality || m.label || '')),
           formatId: m.formatId || 0,
           hasAudio: Boolean(m.is_audio && String(m.mimeType || '').indexOf('video/') === 0) || m.formatId === 18 || m.formatId === 22
@@ -3717,22 +3699,38 @@
       return null;
     }
 
-    function getTierLabels(platform, sourceUrl) {
+    function qualityTierName(height) {
+      var h = parseInt(height, 10) || 0;
+      if (h >= 2160) return '4K';
+      if (h >= 1440) return '2K';
+      if (h >= 1080) return '1080p Full HD';
+      if (h >= 720) return '720p HD';
+      if (h >= 480) return '480p SD';
+      if (h > 0) return h + 'p';
+      return '';
+    }
+
+    function getTierLabels(platform, sourceUrl, data) {
+      data = data || {};
+      var stdH = data.standardPick ? (data.standardPick.height || 0) : 0;
+      var premH = data.premiumPick ? (data.premiumPick.height || 0) : 0;
+      var stdName = qualityTierName(stdH) || 'HD';
+      var premName = qualityTierName(premH) || 'Best quality';
       var isTt = platform === 'tiktok' || isTikTokUrl(sourceUrl);
       var isIg = platform === 'instagram' || isInstagramUrl(sourceUrl);
       if (isTt || isIg) {
         return {
-          standard: 'Download HD without Watermark',
-          premium: 'Download Full HD without Watermark',
-          standardHint: 'NORAML QUALIY -  FAST DOWNLOADING',
-          premiumHint: 'FULL HD QUALITY - FAST DOWNLOADING'
+          standard: 'Download ' + stdName + ' (no watermark)',
+          premium: 'Download ' + premName + ' (no watermark)',
+          standardHint: stdName + ' · direct download',
+          premiumHint: premName + ' · best available'
         };
       }
       return {
-        standard: 'Download HD',
-        premium: 'Download FULL HD',
-        standardHint: 'NORAML QUALIY -  FAST DOWNLOADING',
-        premiumHint: 'FULL HD QUALITY - FAST DOWNLOADING'
+        standard: 'Download ' + stdName,
+        premium: 'Download ' + premName,
+        standardHint: stdName + ' · direct download',
+        premiumHint: premName + ' · best available'
       };
     }
 
@@ -3751,7 +3749,7 @@
     function buildAudioButton(data, platform) {
       if (!data.audioDownloadUrl) return '';
       var audioFilename = sanitizeFilename(data.title) + '.mp3';
-      return '<a href="#" download class="btn-download-audio inline-flex items-center gap-2 px-6 py-3 rounded-lg text-white font-semibold text-sm" data-media-url="' + escapeAttr(data.audioDownloadUrl) + '" data-filename="' + escapeAttr(audioFilename) + '" data-platform="' + escapeAttr(platform) + '" data-type="audio"' + (data.audioSizeBytes > 0 ? ' data-size-bytes="' + data.audioSizeBytes + '"' : '') + '>' +
+      return '<a href="#" download class="btn-download-audio inline-flex items-center gap-2 px-6 py-3 rounded-lg text-white font-semibold text-sm" data-media-url="' + escapeAttr(data.audioDownloadUrl) + '" data-filename="' + escapeAttr(audioFilename) + '" data-platform="' + escapeAttr(platform) + '" data-type="audio"' + (data.audioSizeBytes > 0 ? ' data-size-bytes="' + data.audioSizeBytes + '"' : '') + (data.audioExtractMode ? ' data-audio-extract="1"' : '') + '>' +
         '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>' +
         '<span class="download-label">Download MP3' +
         (data.audioSizeLabel ? ' <span class="tier-size">(' + escapeHtml(data.audioSizeLabel) + ')</span>' : '') +
@@ -3825,11 +3823,27 @@
       trackAnalytics('download_success', { platform: platform, type: 'slideshow_all', message: ctx.slides.length + ' slides' });
     }
 
+    function ensureAudioDownloadUrl(data, sourceUrl) {
+      if (!data) return data;
+      if (data.audioDownloadUrl) return data;
+      if (sourceUrl && isVideoPageUrl(sourceUrl)) {
+        data.audioDownloadUrl = sourceUrl;
+        data.audioExtractMode = true;
+        return data;
+      }
+      if (data.premiumUrl || data.downloadUrl) {
+        data.audioDownloadUrl = sourceUrl || data.premiumUrl || data.downloadUrl;
+        data.audioExtractMode = true;
+      }
+      return data;
+    }
+
     function renderDownloadOptions(platform, data, sourceUrl) {
       var wrap = document.querySelector('#result-' + platform + ' .download-actions');
       if (!wrap) return;
 
-      var labels = getTierLabels(platform, sourceUrl);
+      data = ensureAudioDownloadUrl(data, sourceUrl);
+      var labels = getTierLabels(platform, sourceUrl, data);
       var premiumUrl = data.premiumUrl || data.downloadUrl;
       var standardUrl = data.standardUrl || '';
       var filename = sanitizeFilename(data.title) + '.mp4';
@@ -3848,7 +3862,9 @@
           data.standardSizeBytes || 0,
           data.standardPick
         );
-        html += '<p class="tier-hint">' + escapeHtml(labels.standardHint || '') + '</p>';
+        html += '<p class="tier-hint">' + escapeHtml(
+          (data.standardSizeLabel ? data.standardSizeLabel + ' · ' : '') + (labels.standardHint || 'HD quality')
+        ) + '</p>';
         html += '<span class="tier-premium-tag">Premium</span>';
         html += buildTierButton(
           'premium',
@@ -3861,7 +3877,9 @@
           data.premiumSizeBytes || 0,
           data.premiumPick
         );
-        html += '<p class="tier-hint">' + escapeHtml(labels.premiumHint || '') + '</p>';
+        html += '<p class="tier-hint">' + escapeHtml(
+          (data.premiumSizeLabel ? data.premiumSizeLabel + ' · ' : '') + (labels.premiumHint || 'Best quality')
+        ) + '</p>';
       } else {
         html += buildTierButton(
           'premium',
@@ -4076,13 +4094,14 @@
         var speed = received / elapsed;
         var total = expectedTotal;
         if (received > total && received > 0) total = received;
+        var hasKnownTotal = total > 0;
         var rawPct;
-        if (total > 0) {
+        if (hasKnownTotal) {
           rawPct = Math.min(100, (received / total) * 100);
         } else {
           rawPct = Math.min(100, Math.log10(received + 1) * 22);
         }
-        var pct = mapTransferPercent(rawPct);
+        var pct = mapTransferPercent(rawPct, hasKnownTotal);
         var detail = total > 0
           ? formatBytes(received, false) + ' / ' + formatBytes(total, false) + ' · ' + formatSpeed(speed)
           : formatBytes(received, false) + ' · ' + formatSpeed(speed);
@@ -4208,6 +4227,22 @@
         return;
       }
 
+      if (isAudio && isVideoPageUrl(mediaUrl)) {
+        stopDownloadAnimTimers();
+        showFileDownloadOverlay(true, 'Saving MP3…', 'Extracting audio from video…', null, 'preparing');
+        await apiInitPromise;
+        var extractUrl = buildStreamUrl(mediaUrl, filename, expectedBytes, platform, true, null, { ytdlpFallback: true });
+        var extractRes = await fetchStreamWithRetry(extractUrl, {
+          platform: platform, tier: tier, isAudio: true, maxAttempts: 2, timeoutMs: 120000, prepareUi: false
+        });
+        if (extractRes && extractRes.blocked) return;
+        var extractBlob = await readStreamToBlob(extractRes, { expectedBytes: expectedBytes });
+        validateDownloadBlob(extractBlob, extractRes.headers.get('content-type') || '', expectedBytes, true);
+        saveBlobAsFile(extractBlob, filename);
+        finishDownloadSuccess(true, platform, tier);
+        return;
+      }
+
       if (!isAudio && isGoogleVideoUrl(mediaUrl)) {
         await downloadYouTubeVideo(mediaUrl, filename, expectedBytes, platform, tier);
         return;
@@ -4275,7 +4310,7 @@
 
       startPrepareProgress(isAudio, isAudio ? 'Preparing MP3…' : 'Preparing video…');
       var slowUrl = buildStreamUrl(mediaUrl, filename, expectedBytes, platform, isAudio, null, { ytdlpFallback: true });
-      await streamToFile(slowUrl, { maxAttempts: 3, timeoutMs: 180000, prepareUi: true });
+      await streamToFile(slowUrl, { maxAttempts: 2, timeoutMs: 120000, prepareUi: false });
     }
 
     async function handleMediaDownload(e, btn) {
@@ -4807,7 +4842,7 @@
         if (isLocalDev()) {
           return 'API server not running — open terminal, run: npm start  then open http://127.0.0.1:8080';
         }
-        return 'Network error — please check your connection and try again.';
+        return 'Server unreachable — refresh the page and try again. If this keeps happening, wait a minute and retry.';
       }
       return error.message || 'Failed to fetch video. Please try again.';
     }
@@ -4822,7 +4857,7 @@
       }
 
       if (!text || !text.trim()) {
-        throw new Error('Empty response (HTTP ' + response.status + '). Check Netlify function logs and DOWNLOAD_API_KEY.');
+        throw new Error('Empty response (HTTP ' + response.status + '). Check Netlify function logs and OMNI download API config.');
       }
 
       try {
@@ -4866,14 +4901,13 @@
 
         lastError = extractApiError(data);
 
-        if (/invalid api key|rapidapi.*key|403 forbidden|not subscribed|subscription/i.test(lastError)) {
+        if (/invalid.*token|403 forbidden|unauthorized|api token/i.test(lastError)) {
           var hint = (data && data.hint) ? (' ' + data.hint) : '';
-          var sub = (data && data.subscribe_url) ? ' Subscribe: ' + data.subscribe_url : '';
-          throw new Error((data && data.message) || lastError + hint + sub);
+          throw new Error((data && data.message) || lastError + hint);
         }
 
-        if (/rapidapi_key is not configured|not configured|download_api_key/i.test(lastError)) {
-          throw new Error('Download API key missing — add DOWNLOAD_API_KEY in Netlify Environment variables and Redeploy.');
+        if (/not configured|backend.*not|omni_api_token|download api/i.test(lastError)) {
+          throw new Error('Download API not configured — set OMNI_BACKEND_URL and OMNI_API_TOKEN in Netlify Environment variables, then Redeploy.');
         }
 
         if (/quota|exceeded|monthly.*limit|upgrade your plan/i.test(lastError)) {
@@ -5243,7 +5277,13 @@
 
       var qualityLabel = videoMedia ? formatQualityLabel(videoMedia.quality || videoMedia.label) : '';
 
-      var allMedias = payload.medias || payload.audio_medias || payload.video_medias || [];
+      var allMedias = []
+        .concat(payload.medias || [])
+        .concat(payload.video_medias || [])
+        .concat(payload.audio_medias || []);
+      if (payload.links && Array.isArray(payload.links)) {
+        allMedias = allMedias.concat(payload.links);
+      }
       var audioInfo = discoverAudioDownload(payload, allMedias);
       var audioDownloadUrl = audioInfo.url || '';
       var audioExtension = audioInfo.extension || 'mp3';
@@ -5352,6 +5392,8 @@
         source: formatQualityLabel(payload.source || data.source || ''),
         duration: duration
       };
+
+      normalized = ensureAudioDownloadUrl(normalized, sourceUrl);
 
       var slides = extractSlidesFromPayload(payload, mediaSources);
       if (slides.length >= 2 || (slides.length >= 1 && !downloadUrl)) {

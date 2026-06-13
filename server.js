@@ -14,12 +14,12 @@ require('./lib/load-env').loadEnvFile();
 
 const {
   ensureApiKey,
-  getApiKey,
   normalizeVideoUrl,
+  hasExternalBackend,
+  getBackendConfig,
   upstreamHeaders,
   probeMediaSize,
   fetchExternalStream,
-  hasExternalBackend,
 } = require('./lib/api-proxy');
 const { isVideoPageUrl, downloadYtdlpToFile } = require('./lib/ytdlp-runner');
 const { withDownloadSlot, getQueueStats } = require('./lib/download-queue');
@@ -99,8 +99,8 @@ app.get('/api/health', function (req, res) {
   res.json({
     ok: true,
     service: 'omni-downloader',
-    rapidapi_configured: Boolean(getApiKey()),
-    external_backend: hasExternalBackend(),
+    download_api: hasExternalBackend(),
+    backend_url: getBackendConfig().url || null,
     admin_configured: Boolean(process.env.ADMIN_PASSWORD),
     storage: 'sqlite3',
     download_queue: getQueueStats(),

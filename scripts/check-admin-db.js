@@ -7,8 +7,8 @@ async function main() {
   }
   const events = await sqlite.all('SELECT event_type, COUNT(*) as c FROM events GROUP BY event_type');
   console.log('events:', JSON.stringify(events, null, 2));
-  const rapid = await sqlite.get('SELECT used, limit_value FROM plan_usage WHERE plan_id = ?', ['rapidapi']);
-  console.log('rapidapi plan:', rapid);
+  const dl = await sqlite.get('SELECT used, limit_value FROM plan_usage WHERE plan_id = ?', ['download-api']);
+  console.log('download-api plan:', dl);
   const recent = await sqlite.all('SELECT event_type, message, created_at FROM events ORDER BY created_at DESC LIMIT 5');
   console.log('recent:', JSON.stringify(recent, null, 2));
 }

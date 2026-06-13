@@ -7,7 +7,7 @@
 
 [functions]
   node_bundler = "esbuild"
-  included_files = ["netlify/functions/lib/**"]
+  included_files = ["netlify/functions/lib/**", "api.config.json"]
   external_node_modules = ["@upstash/redis", "@netlify/blobs", "sqlite3"]
 
 [functions."download"]

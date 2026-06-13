@@ -24,7 +24,7 @@ if (fs.existsSync(envPath)) {
 }
 
 const TOKEN = process.env.NETLIFY_ACCESS_TOKEN;
-const SITE_ID = process.env.NETLIFY_SITE_ID;
+const SITE_ID = process.env.NETLIFY_SITE_ID || 'e5996379-7317-4294-8207-43d5948de94e';
 const SITE_NAME = (process.env.DOMAIN_NAME || '').replace(/\.netlify\.app$/i, '') || 'omnidownloader';
 
 if (!TOKEN || !SITE_ID) {
@@ -48,8 +48,6 @@ const result = spawnSync(
     netlifyBin,
     'deploy',
     '--prod',
-    '--auth',
-    TOKEN,
     '--dir',
     '.',
     '--functions',
