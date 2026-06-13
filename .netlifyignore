@@ -1,0 +1,9 @@
+.env
+.env.*
+data/
+scripts/
+node_modules/
+.git/
+*.md
+DEPLOY_ENV.txt
+netlify-env-website-site.txt

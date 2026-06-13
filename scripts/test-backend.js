@@ -1,7 +1,7 @@
 'use strict';
 
 const BASE = process.argv[2] || 'https://spontaneous-salamander-418289.netlify.app';
-const TOKEN = process.argv[3] || 'e2675cdba8f91034';
+const TOKEN = process.argv[3] || process.env.OMNI_API_TOKEN || '';
 const URL = process.argv[4] || 'https://www.tiktok.com/@yeuphimzz/video/7237370304337628442';
 
 async function main() {

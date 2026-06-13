@@ -1,7 +1,7 @@
 'use strict';
 
 const BASE = 'https://spontaneous-salamander-418289.netlify.app';
-const TOKEN = 'e2675cdba8f91034';
+const TOKEN = process.env.OMNI_API_TOKEN || process.argv[3] || '';
 const VIDEO = 'https://www.tiktok.com/@yeuphimzz/video/7237370304337628442';
 
 async function probe(label, url, init) {
