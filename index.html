@@ -2759,14 +2759,42 @@
     var API_TOKEN = '';
     var API_BACKEND = '';
 
-    function applyApiBase(base) {
+    function applyApiBase(base, opts) {
+      opts = opts || {};
       var root = String(base || '').trim().replace(/\/$/, '');
       API_BACKEND = root;
       API.download = (root || '') + '/api/download';
-      API.stream = '/api/stream';
+      API.stream = opts.fullApi ? (root || '') + '/api/stream' : '/api/stream';
       API.size = (root || '') + '/api/size';
       API.queueStatus = (root || '') + '/api/queue/status';
       API.collect = (root || '') + '/api/admin/collect';
+    }
+
+    var LOCAL_DEV_API = 'http://127.0.0.1:8080';
+
+    async function tryLocalDevApi(banner) {
+      if (await probeHealth('/api/health')) {
+        applyApiBase('', { fullApi: true });
+        if (banner) banner.classList.add('hidden');
+        console.info('[Omni] Local API backend (localhost dev)');
+        return true;
+      }
+      if (location.port && location.port !== '8080' && await probeHealth(LOCAL_DEV_API + '/api/health')) {
+        applyApiBase(LOCAL_DEV_API, { fullApi: true });
+        if (banner) banner.classList.add('hidden');
+        console.info('[Omni] Local API backend at', LOCAL_DEV_API);
+        return true;
+      }
+      if (await probeHealth('/.netlify/functions/health')) {
+        API.download = '/.netlify/functions/download';
+        API.stream = '/.netlify/functions/stream';
+        API.size = '/.netlify/functions/size';
+        API.queueStatus = '/api/queue/status';
+        if (banner) banner.classList.add('hidden');
+        console.info('[Omni] Netlify functions backend (localhost dev)');
+        return true;
+      }
+      return false;
     }
 
     function apiAuthHeaders(extra) {
@@ -2861,6 +2889,13 @@
 
     async function initProductionApi() {
       var banner = document.getElementById('netlify-deploy-banner');
+
+      if (isLocalDev()) {
+        if (await tryLocalDevApi(banner)) return true;
+        if (banner) banner.classList.remove('hidden');
+        return false;
+      }
+
       var externalBase = await loadBackendConfigUrl();
       if (externalBase && await probeHealth(externalBase + '/api/health')) {
         applyApiBase(externalBase);
@@ -3958,8 +3993,8 @@
       var base = streamBaseOverride || API.stream || '/api/stream';
       var name = encodeURIComponent(filename || (isAudio ? 'audio.mp3' : 'video.mp4'));
       var url = base + '?url=' + encodeURIComponent(target) + '&name=' + name;
+      if (pageUrl) url += '&page_url=' + encodeURIComponent(pageUrl);
       if (sizeBytes > 0) url += '&size=' + sizeBytes;
-      if (useYtdlp && pageUrl) url += '&page_url=' + encodeURIComponent(pageUrl);
       if (useYtdlp) url += '&ytdlp=1';
       if (isAudio) url += '&audio=1';
       if (streamBaseOverride && API_TOKEN) url += '&token=' + encodeURIComponent(API_TOKEN);
@@ -4323,12 +4358,13 @@
 
         stopDownloadAnimTimers();
         showFileDownloadOverlay(false);
+        var errMsg = (err && err.message) ? String(err.message) : '';
         trackAnalytics('download_fail', {
           platform: platform,
           tier: tier,
-          message: (err && err.message ? err.message : 'Download failed').slice(0, 300)
+          message: (errMsg || 'Download failed').slice(0, 300)
         });
-        showToast('Download failed — try again or pick another quality.', 'error');
+        showToast(errMsg && errMsg.length < 120 ? errMsg : 'Download failed — try again or pick another quality.', 'error');
       }
     }
 
@@ -4769,7 +4805,7 @@
     function getFetchErrorMessage(error) {
       if (error && error.message === 'Failed to fetch') {
         if (isLocalDev()) {
-          return 'Network error — run: npx netlify dev --port 8080';
+          return 'API server not running — open terminal, run: npm start  then open http://127.0.0.1:8080';
         }
         return 'Network error — please check your connection and try again.';
       }

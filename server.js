@@ -18,6 +18,8 @@ const {
   normalizeVideoUrl,
   upstreamHeaders,
   probeMediaSize,
+  fetchExternalStream,
+  hasExternalBackend,
 } = require('./lib/api-proxy');
 const { isVideoPageUrl, downloadYtdlpToFile } = require('./lib/ytdlp-runner');
 const { withDownloadSlot, getQueueStats } = require('./lib/download-queue');
@@ -93,10 +95,12 @@ function requireAdmin(req, res, next) {
 }
 
 app.get('/api/health', function (req, res) {
+  const { hasExternalBackend } = require('./lib/api-proxy');
   res.json({
     ok: true,
     service: 'omni-downloader',
     rapidapi_configured: Boolean(getApiKey()),
+    external_backend: hasExternalBackend(),
     admin_configured: Boolean(process.env.ADMIN_PASSWORD),
     storage: 'sqlite3',
     download_queue: getQueueStats(),
@@ -313,13 +317,14 @@ app.get('/api/stream', async function (req, res) {
 
     async function relayCdnToClient(cdnUrl) {
       const headers = upstreamHeaders(cdnUrl);
-      let upstream = await fetch(cdnUrl, { headers: headers });
+      let upstream = await fetch(cdnUrl, { headers: headers, redirect: 'follow' });
       if (!upstream.ok && (upstream.status === 403 || upstream.status === 401)) {
         upstream = await fetch(cdnUrl, {
           headers: Object.assign({}, headers, {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             Accept: 'video/mp4,video/*,*/*;q=0.8',
           }),
+          redirect: 'follow',
         });
       }
       if (!upstream.ok) return false;
@@ -345,6 +350,51 @@ app.get('/api/stream', async function (req, res) {
       const buffer = Buffer.from(await upstream.arrayBuffer());
       res.send(buffer);
       return true;
+    }
+
+    async function relayFetchToClient(upstream) {
+      if (!upstream || !upstream.ok) return false;
+      const ct = upstream.headers.get('content-type') || '';
+      if (/application\/json/i.test(ct)) return false;
+
+      const safeName = filename.replace(/"/g, '');
+      res.setHeader('Content-Type', ct || 'application/octet-stream');
+      res.setHeader('Content-Disposition', 'attachment; filename="' + safeName + '"');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      const contentLength = upstream.headers.get('content-length');
+      if (contentLength) {
+        res.setHeader('Content-Length', contentLength);
+      } else if (expectedSize > 0) {
+        res.setHeader('Content-Length', String(expectedSize));
+      }
+
+      if (upstream.body) {
+        const nodeStream = Readable.fromWeb(upstream.body);
+        await pipeline(nodeStream, res);
+        return true;
+      }
+
+      const buffer = Buffer.from(await upstream.arrayBuffer());
+      res.send(buffer);
+      return true;
+    }
+
+    async function relayExternalToClient(extra) {
+      if (!hasExternalBackend()) return false;
+      try {
+        const upstream = await fetchExternalStream(Object.assign({
+          url: mediaUrl,
+          name: filename,
+          size: expectedSize > 0 ? String(expectedSize) : '',
+          page_url: pageUrl || '',
+          ytdlp: forceYtdlp ? '1' : '',
+          audio: isAudio ? '1' : '',
+        }, extra || {}));
+        return relayFetchToClient(upstream);
+      } catch (extErr) {
+        console.warn('[stream] external relay failed:', extErr.message);
+        return false;
+      }
     }
 
     async function relayYtdlpToClient(ytdlpSource) {
@@ -388,26 +438,39 @@ app.get('/api/stream', async function (req, res) {
     const ytdlpSource = pageUrl || (isVideoPageUrl(mediaUrl) ? mediaUrl : '');
 
     if (!forceYtdlp && directCdn) {
-      const relayed = await relayCdnToClient(mediaUrl);
-      if (relayed) return;
+      if (await relayCdnToClient(mediaUrl)) return;
+      if (await relayExternalToClient()) return;
     }
 
     if (forceYtdlp && ytdlpSource) {
-      await relayYtdlpToClient(ytdlpSource);
-      return;
+      if (hasExternalBackend() && await relayExternalToClient({ ytdlp: '1' })) return;
+      try {
+        await relayYtdlpToClient(ytdlpSource);
+        return;
+      } catch (ytdlpErr) {
+        console.warn('[stream] local yt-dlp failed:', ytdlpErr.message);
+        if (await relayExternalToClient({ ytdlp: '1' })) return;
+        throw ytdlpErr;
+      }
     }
 
     if (ytdlpSource) {
-      await relayYtdlpToClient(ytdlpSource);
-      return;
+      if (hasExternalBackend() && await relayExternalToClient({ ytdlp: '1' })) return;
+      try {
+        await relayYtdlpToClient(ytdlpSource);
+        return;
+      } catch (ytdlpErr) {
+        console.warn('[stream] local yt-dlp fallback failed:', ytdlpErr.message);
+        if (await relayExternalToClient({ ytdlp: '1' })) return;
+      }
     }
 
-    if (directCdn) {
-      const relayed = await relayCdnToClient(mediaUrl);
-      if (relayed) return;
-    }
+    if (directCdn && await relayExternalToClient()) return;
 
-    return res.status(502).json({ error: 'No stream source available' });
+    return res.status(403).json({
+      error: 'CDN blocked relay',
+      message: 'Download link expired or blocked. Click Download again to refresh the link.',
+    });
   } catch (err) {
     if (!res.headersSent) {
       res.status(502).json({ error: 'Stream error: ' + err.message });

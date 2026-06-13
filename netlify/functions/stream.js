@@ -2,6 +2,8 @@ const fs = require('fs');
 const {
   normalizeVideoUrl,
   upstreamHeaders,
+  fetchExternalStream,
+  hasExternalBackend,
 } = require('./lib/api-proxy');
 const { isVideoPageUrl } = require('./lib/ytdlp-runner');
 const { corsHeaders, jsonResponse, emptyResponse, queryParam } = require('./lib/http');
@@ -141,11 +143,57 @@ exports.handler = async (event) => {
     }
 
     if (forceYtdlp && ytdlpSource) {
-      return relayYtdlpStream(ytdlpSource, filename, isAudio);
+      try {
+        return await relayYtdlpStream(ytdlpSource, filename, isAudio);
+      } catch (ytdlpErr) {
+        console.warn('[stream] local yt-dlp failed:', ytdlpErr.message);
+      }
     }
 
     if (ytdlpSource) {
-      return relayYtdlpStream(ytdlpSource, filename, isAudio);
+      try {
+        return await relayYtdlpStream(ytdlpSource, filename, isAudio);
+      } catch (ytdlpErr) {
+        console.warn('[stream] yt-dlp fallback failed:', ytdlpErr.message);
+      }
+    }
+
+    if (hasExternalBackend()) {
+      try {
+        const upstream = await fetchExternalStream({
+          url: mediaUrl,
+          name: filename,
+          size: expectedSize > 0 ? String(expectedSize) : '',
+          page_url: pageUrl || '',
+          ytdlp: (forceYtdlp || ytdlpSource) ? '1' : '',
+          audio: isAudio ? '1' : '',
+        });
+        if (upstream && upstream.ok) {
+          const ct = upstream.headers.get('content-type') || '';
+          if (!/application\/json/i.test(ct)) {
+            const safeName = filename.replace(/"/g, '');
+            const responseHeaders = corsHeaders({
+              'Content-Type': ct || 'application/octet-stream',
+              'Content-Disposition': 'attachment; filename="' + safeName + '"',
+            });
+            const contentLength = upstream.headers.get('content-length');
+            if (contentLength) responseHeaders['Content-Length'] = contentLength;
+            else if (expectedSize > 0) responseHeaders['Content-Length'] = String(expectedSize);
+            if (typeof Response !== 'undefined' && upstream.body) {
+              return new Response(upstream.body, { status: 200, headers: responseHeaders });
+            }
+            const buffer = Buffer.from(await upstream.arrayBuffer());
+            return {
+              statusCode: 200,
+              headers: responseHeaders,
+              body: buffer.toString('base64'),
+              isBase64Encoded: true,
+            };
+          }
+        }
+      } catch (extErr) {
+        console.warn('[stream] external relay failed:', extErr.message);
+      }
     }
 
     if (directCdn) {

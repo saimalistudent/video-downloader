@@ -1,11 +1,12 @@
 /**
- * Shared RapidAPI proxy — server-side only. Never import from frontend.
+ * Download API proxy — server-side only. Never import from frontend.
+ * Config: api.config.json + DOWNLOAD_API_KEY (or legacy RAPIDAPI_KEY) in env.
  */
 const fs = require('fs');
 const path = require('path');
 
 (function loadDotenv() {
-  if (process.env.RAPIDAPI_KEY) return;
+  if (process.env.DOWNLOAD_API_KEY || process.env.RAPIDAPI_KEY) return;
   const envPath = path.join(process.cwd(), '.env');
   if (!fs.existsSync(envPath)) return;
   for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
@@ -21,13 +22,43 @@ const path = require('path');
   }
 })();
 
-const RAPIDAPI_HOST = 'social-download-all-in-one.p.rapidapi.com';
-const RAPIDAPI_PATH = '/v1/social/autolink';
-const RAPIDAPI_SUBSCRIBE_URL = 'https://rapidapi.com/aiovod/api/social-download-all-in-one';
 const { parseRateLimitHeaders } = require('./rapidapi-usage');
 
+let apiConfigCache = null;
+
+function loadApiConfig() {
+  if (apiConfigCache) return apiConfigCache;
+  const defaults = {
+    host: 'social-download-all-in-one.p.rapidapi.com',
+    path: '/v1/social/autolink',
+    method: 'POST',
+    body_key: 'url',
+    subscribe_url: 'https://rapidapi.com/nguyenmanhict-MuTUtGWD7K/api/social-download-all-in-one',
+  };
+  try {
+    const configPath = path.join(process.cwd(), 'api.config.json');
+    if (fs.existsSync(configPath)) {
+      const raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      apiConfigCache = Object.assign({}, defaults, {
+        host: raw.host || defaults.host,
+        path: raw.path || defaults.path,
+        method: String(raw.method || defaults.method).toUpperCase(),
+        body_key: raw.body_key || defaults.body_key,
+        subscribe_url: raw.subscribe_url || defaults.subscribe_url,
+        backend_url: raw.backend_url || '',
+        api_token: raw.api_token || '',
+      });
+      return apiConfigCache;
+    }
+  } catch (err) {
+    console.warn('[api-proxy] api.config.json read failed:', err.message);
+  }
+  apiConfigCache = defaults;
+  return apiConfigCache;
+}
+
 function getApiKey() {
-  let key = String(process.env.RAPIDAPI_KEY || '').trim();
+  let key = String(process.env.DOWNLOAD_API_KEY || process.env.RAPIDAPI_KEY || '').trim();
   if (
     (key.startsWith('"') && key.endsWith('"')) ||
     (key.startsWith("'") && key.endsWith("'"))
@@ -49,19 +80,29 @@ function sendJson(res, status, data) {
   res.status(status).json(data);
 }
 
+function getBackendConfig() {
+  const cfg = loadApiConfig();
+  const url = String(process.env.OMNI_BACKEND_URL || cfg.backend_url || '').trim().replace(/\/$/, '');
+  const token = String(process.env.OMNI_API_TOKEN || cfg.api_token || '').trim();
+  return { url, token };
+}
+
+function hasExternalBackend() {
+  return Boolean(getBackendConfig().url);
+}
+
 function ensureApiKey() {
   const apiKey = getApiKey();
-  if (!apiKey) {
-    return {
-      ok: false,
-      error: {
-        error: 'RAPIDAPI_KEY is not configured',
-        message: 'Vercel → Project → Settings → Environment Variables → add RAPIDAPI_KEY → Redeploy (Production).',
-        api_configured: false,
-      },
-    };
-  }
-  return { ok: true, apiKey };
+  if (apiKey) return { ok: true, apiKey: apiKey };
+  if (hasExternalBackend()) return { ok: true, apiKey: '', backend: true };
+  return {
+    ok: false,
+    error: {
+      error: 'DOWNLOAD_API_KEY is not configured',
+      message: 'Add DOWNLOAD_API_KEY to .env or set backend_url in api.config.json, then restart the server.',
+      api_configured: false,
+    },
+  };
 }
 
 function normalizeVideoUrl(videoUrl) {
@@ -97,16 +138,15 @@ function refererForUrl(mediaUrl) {
   return 'https://www.google.com/';
 }
 
-/** Netlify/Vercel cannot proxy multi‑MB video bodies — use direct CDN link instead */
 const PROXY_MAX_BYTES = 4 * 1024 * 1024;
 
 function preferDirectStream(mediaUrl) {
   try {
     const host = new URL(mediaUrl).hostname.toLowerCase();
-    const path = (new URL(mediaUrl).pathname || '').toLowerCase();
+    const pathName = (new URL(mediaUrl).pathname || '').toLowerCase();
     if (/googlevideo|youtube|gvt1\.com|ytimg/.test(host)) return true;
     if (/fbcdn|facebook\.com|fb\.watch/.test(host)) return true;
-    if (/\.m3u8(\?|$)/.test(path)) return true;
+    if (/\.m3u8(\?|$)/.test(pathName)) return true;
   } catch {
     return false;
   }
@@ -135,28 +175,94 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function rapidapiDownload(videoUrl) {
-  const apiKey = getApiKey();
-  let response;
+async function upstreamExternalBackend(videoUrl) {
+  const { url, token } = getBackendConfig();
+  if (!url) return null;
+
+  const headers = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    'User-Agent': 'OmniDownloader/1.0',
+  };
+  if (token) {
+    headers.Authorization = 'Bearer ' + token;
+    headers['X-Omni-Token'] = token;
+  }
 
   try {
-    response = await fetch(`https://${RAPIDAPI_HOST}${RAPIDAPI_PATH}`, {
+    const response = await fetch(url + '/api/download', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-RapidAPI-Key': apiKey,
-        'X-RapidAPI-Host': RAPIDAPI_HOST,
-        Accept: 'application/json',
-        'User-Agent': 'OmniDownloader/1.0',
-      },
+      headers: headers,
       body: JSON.stringify({ url: videoUrl }),
     });
+    const text = await response.text();
+    if (!text.trim()) {
+      return {
+        status: response.status || 502,
+        data: { error: 'External backend returned empty response' },
+        rateLimit: null,
+      };
+    }
+    const data = JSON.parse(text);
+    return { status: response.status, data: data, rateLimit: null };
   } catch (err) {
     return {
       status: 502,
       data: {
-        error: 'RapidAPI fetch failed',
-        message: err.message || 'Network error contacting RapidAPI',
+        error: 'External backend fetch failed',
+        message: err.message || 'Could not reach ' + url,
+      },
+      rateLimit: null,
+    };
+  }
+}
+
+async function upstreamDownload(videoUrl) {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    const external = await upstreamExternalBackend(videoUrl);
+    if (external) return external;
+    return {
+      status: 500,
+      data: {
+        error: 'No download API configured',
+        message: 'Set DOWNLOAD_API_KEY in .env or backend_url in api.config.json',
+      },
+      rateLimit: null,
+    };
+  }
+
+  const cfg = loadApiConfig();
+  let response;
+
+  const headers = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    'User-Agent': 'OmniDownloader/1.0',
+    'X-RapidAPI-Key': apiKey,
+    'X-RapidAPI-Host': cfg.host,
+  };
+
+  const fetchUrl = `https://${cfg.host}${cfg.path}`;
+
+  try {
+    if (cfg.method === 'GET') {
+      const qs = new URLSearchParams();
+      qs.set(cfg.body_key, videoUrl);
+      response = await fetch(`${fetchUrl}?${qs.toString()}`, { method: 'GET', headers });
+    } else {
+      response = await fetch(fetchUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ [cfg.body_key]: videoUrl }),
+      });
+    }
+  } catch (err) {
+    return {
+      status: 502,
+      data: {
+        error: 'Download API fetch failed',
+        message: err.message || 'Network error contacting download API',
       },
       rateLimit: null,
     };
@@ -168,8 +274,8 @@ async function rapidapiDownload(videoUrl) {
     return {
       status: response.status || 502,
       data: {
-        error: 'RapidAPI returned empty response',
-        message: `HTTP ${response.status} — verify RAPIDAPI_KEY and subscription.`,
+        error: 'Download API returned empty response',
+        message: `HTTP ${response.status} — verify DOWNLOAD_API_KEY and subscription.`,
         http_status: response.status,
       },
       rateLimit: rateLimit,
@@ -178,22 +284,19 @@ async function rapidapiDownload(videoUrl) {
 
   try {
     const data = JSON.parse(text);
-    const rapidMsg = String(data.message || data.error || '').trim();
+    const apiMsg = String(data.message || data.error || '').trim();
 
     if (response.status === 403) {
       return {
         status: 403,
         data: {
-          error: rapidMsg || 'RapidAPI access denied (403)',
-          message:
-            'Fix: (1) Copy a fresh key from rapidapi.com/developer/security '
-            + '(2) Subscribe to Social Download All In One API '
-            + '(3) Set RAPIDAPI_KEY in Vercel for Production (4) Redeploy.',
-          subscribe_url: RAPIDAPI_SUBSCRIBE_URL,
-          rapidapi_message: rapidMsg || null,
-          hint: /invalid api key/i.test(rapidMsg)
-            ? 'Key is wrong or expired — generate a new one on RapidAPI.'
-            : 'You may not be subscribed to this API — open subscribe_url and click Subscribe.',
+          error: apiMsg || 'Download API access denied (403)',
+          message: 'Check DOWNLOAD_API_KEY in Netlify env vars and that your API plan is active, then redeploy.',
+          subscribe_url: cfg.subscribe_url,
+          api_message: apiMsg || null,
+          hint: /invalid api key/i.test(apiMsg)
+            ? 'Key is wrong or expired — copy a fresh key from your API dashboard.'
+            : 'You may not be subscribed — open subscribe_url and activate the plan.',
         },
         rateLimit: rateLimit,
       };
@@ -203,9 +306,9 @@ async function rapidapiDownload(videoUrl) {
       return {
         status: 401,
         data: {
-          error: rapidMsg || 'RapidAPI unauthorized',
-          message: 'RAPIDAPI_KEY missing or invalid on Vercel. Redeploy after updating env vars.',
-          rapidapi_message: rapidMsg || null,
+          error: apiMsg || 'Download API unauthorized',
+          message: 'DOWNLOAD_API_KEY missing or invalid. Redeploy after updating env vars.',
+          api_message: apiMsg || null,
         },
         rateLimit: rateLimit,
       };
@@ -215,7 +318,7 @@ async function rapidapiDownload(videoUrl) {
   } catch {
     return {
       status: 502,
-      data: { error: 'RapidAPI returned non-JSON response', raw: text.slice(0, 200) },
+      data: { error: 'Download API returned non-JSON response', raw: text.slice(0, 200) },
       rateLimit: parseRateLimitHeaders(response.headers),
     };
   }
@@ -228,7 +331,7 @@ async function proxyDownload(videoUrl, retries = 3) {
 
   for (let attempt = 0; attempt < retries; attempt += 1) {
     try {
-      const { status, data, rateLimit } = await rapidapiDownload(videoUrl);
+      const { status, data, rateLimit } = await upstreamDownload(videoUrl);
       lastStatus = status;
       lastData = data;
       if (rateLimit) lastRateLimit = rateLimit;
@@ -329,9 +432,13 @@ function handleOptions(req, res) {
   res.status(204).end();
 }
 
+const cfg = loadApiConfig();
+
 module.exports = {
-  RAPIDAPI_HOST,
-  RAPIDAPI_SUBSCRIBE_URL,
+  DOWNLOAD_API_HOST: cfg.host,
+  DOWNLOAD_API_SUBSCRIBE_URL: cfg.subscribe_url,
+  RAPIDAPI_HOST: cfg.host,
+  RAPIDAPI_SUBSCRIBE_URL: cfg.subscribe_url,
   getApiKey,
   cors,
   sendJson,
@@ -346,4 +453,7 @@ module.exports = {
   proxyDownload,
   readRequestBody,
   handleOptions,
+  loadApiConfig,
+  hasExternalBackend,
+  getBackendConfig,
 };
