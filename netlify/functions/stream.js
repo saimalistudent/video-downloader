@@ -1,9 +1,60 @@
+const fs = require('fs');
 const {
   normalizeVideoUrl,
   upstreamHeaders,
 } = require('./lib/api-proxy');
+const { isVideoPageUrl, streamYtdlpToWritable } = require('./lib/ytdlp-runner');
 const { corsHeaders, jsonResponse, emptyResponse, queryParam } = require('./lib/http');
 const { incrementDownloadCount } = require('./lib/stats-store');
+
+async function relayCdnStream(mediaUrl, filename, expectedSize) {
+  const upstreamReqHeaders = upstreamHeaders(mediaUrl);
+  let upstream = await fetch(mediaUrl, { headers: upstreamReqHeaders, redirect: 'follow' });
+
+  if (!upstream.ok && (upstream.status === 403 || upstream.status === 401)) {
+    upstream = await fetch(mediaUrl, {
+      headers: Object.assign({}, upstreamReqHeaders, {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        Accept: 'video/mp4,video/*,*/*;q=0.8',
+      }),
+      redirect: 'follow',
+    });
+  }
+
+  if (!upstream.ok) {
+    if (upstream.status === 403 || upstream.status === 401) {
+      return jsonResponse(403, {
+        error: 'CDN blocked relay',
+        message: 'Download link expired or blocked by the platform CDN. Click Download again to refresh the link.',
+      });
+    }
+    return jsonResponse(upstream.status, { error: 'Upstream HTTP ' + upstream.status });
+  }
+
+  const safeName = filename.replace(/"/g, '');
+  const responseHeaders = corsHeaders({
+    'Content-Type': upstream.headers.get('content-type') || 'application/octet-stream',
+    'Content-Disposition': 'attachment; filename="' + safeName + '"',
+  });
+  const contentLength = upstream.headers.get('content-length');
+  if (contentLength) {
+    responseHeaders['Content-Length'] = contentLength;
+  } else if (expectedSize > 0) {
+    responseHeaders['Content-Length'] = String(expectedSize);
+  }
+
+  if (typeof Response !== 'undefined' && upstream.body) {
+    return new Response(upstream.body, { status: 200, headers: responseHeaders });
+  }
+
+  const buffer = Buffer.from(await upstream.arrayBuffer());
+  return {
+    statusCode: 200,
+    headers: responseHeaders,
+    body: buffer.toString('base64'),
+    isBase64Encoded: true,
+  };
+}
 
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
@@ -16,35 +67,74 @@ exports.handler = async (event) => {
 
   try {
     let mediaUrl = queryParam(event, 'url').trim();
+    const pageUrl = queryParam(event, 'page_url').trim();
     const filename = queryParam(event, 'name').trim() || 'video.mp4';
     const expectedSize = parseInt(queryParam(event, 'size') || '0', 10) || 0;
+    const isAudio = queryParam(event, 'audio') === '1';
     mediaUrl = normalizeVideoUrl(mediaUrl);
 
     if (!mediaUrl) {
       return jsonResponse(400, { error: 'Missing url parameter' });
     }
 
-    const upstreamReqHeaders = upstreamHeaders(mediaUrl);
-    let upstream = await fetch(mediaUrl, { headers: upstreamReqHeaders, redirect: 'follow' });
-
-    if (!upstream.ok && (upstream.status === 403 || upstream.status === 401)) {
-      upstream = await fetch(mediaUrl, {
-        headers: Object.assign({}, upstreamReqHeaders, {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          Accept: 'video/mp4,video/*,*/*;q=0.8',
-        }),
-        redirect: 'follow',
-      });
-    }
-
-    if (!upstream.ok) {
-      if (upstream.status === 403 || upstream.status === 401) {
-        return jsonResponse(403, {
-          error: 'CDN blocked relay',
-          message: 'Download link expired or blocked by the platform CDN. Click Download again to refresh the link.',
-        });
+    const ytdlpSource = normalizeVideoUrl(pageUrl || (isVideoPageUrl(mediaUrl) ? mediaUrl : ''));
+    if (ytdlpSource) {
+      try {
+        await incrementDownloadCount();
+      } catch (err) {
+        console.error('[stream] stats increment skipped:', err.message);
       }
-      return jsonResponse(upstream.status, { error: 'Upstream HTTP ' + upstream.status });
+
+      const safeName = filename.replace(/"/g, '');
+      const contentType = isAudio ? 'audio/mpeg' : 'video/mp4';
+      const { downloadYtdlpToFile } = require('./lib/ytdlp-runner');
+      const { withDownloadSlot } = require('./lib/download-queue');
+      let filePath;
+      let tmpDir;
+      try {
+        const result = await withDownloadSlot(function () {
+          return downloadYtdlpToFile(ytdlpSource, { audio: isAudio });
+        });
+        filePath = result.filePath;
+        tmpDir = result.tmpDir;
+      } catch (queueErr) {
+        const status = queueErr.status || 502;
+        const headers = corsHeaders({
+          'Content-Type': 'application/json',
+        });
+        if (status === 503) {
+          headers['Retry-After'] = String(queueErr.retryAfter || 15);
+        }
+        return {
+          statusCode: status,
+          headers: headers,
+          body: JSON.stringify({
+            error: queueErr.message || 'Download queue error',
+            message: queueErr.message || 'Server busy — try again shortly.',
+          }),
+        };
+      }
+      try {
+        const buffer = fs.readFileSync(filePath);
+        if (!buffer.length) {
+          return jsonResponse(502, { error: 'Empty file from yt-dlp' });
+        }
+        return {
+          statusCode: 200,
+          headers: corsHeaders({
+            'Content-Type': contentType,
+            'Content-Disposition': 'attachment; filename="' + safeName + '"',
+            'Content-Length': String(buffer.length),
+          }),
+          body: buffer.toString('base64'),
+          isBase64Encoded: true,
+        };
+      } finally {
+        try {
+          fs.unlinkSync(filePath);
+          fs.rmdirSync(tmpDir);
+        } catch (cleanupErr) { /* ignore */ }
+      }
     }
 
     try {
@@ -53,30 +143,9 @@ exports.handler = async (event) => {
       console.error('[stream] stats increment skipped:', err.message);
     }
 
-    const safeName = filename.replace(/"/g, '');
-    const responseHeaders = corsHeaders({
-      'Content-Type': upstream.headers.get('content-type') || 'application/octet-stream',
-      'Content-Disposition': 'attachment; filename="' + safeName + '"',
-    });
-    const contentLength = upstream.headers.get('content-length');
-    if (contentLength) {
-      responseHeaders['Content-Length'] = contentLength;
-    } else if (expectedSize > 0) {
-      responseHeaders['Content-Length'] = String(expectedSize);
-    }
-
-    if (typeof Response !== 'undefined' && upstream.body) {
-      return new Response(upstream.body, { status: 200, headers: responseHeaders });
-    }
-
-    const buffer = Buffer.from(await upstream.arrayBuffer());
-    return {
-      statusCode: 200,
-      headers: responseHeaders,
-      body: buffer.toString('base64'),
-      isBase64Encoded: true,
-    };
+    return relayCdnStream(mediaUrl, filename, expectedSize);
   } catch (err) {
+    console.error('[stream] error:', err.message);
     return jsonResponse(502, { error: 'Stream error: ' + err.message });
   }
 };

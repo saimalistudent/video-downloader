@@ -50,7 +50,7 @@ exports.handler = async (event, context) => {
 
     const keyCheck = ensureApiKey();
     if (!keyCheck.ok) {
-      console.error('[download] RAPIDAPI_KEY missing — set in Netlify env vars and redeploy');
+      console.error('[download] DOWNLOAD_API_KEY missing — set in Netlify env vars and redeploy');
       return jsonResponse(500, keyCheck.error);
     }
 
@@ -68,7 +68,7 @@ exports.handler = async (event, context) => {
           status: result.status,
           duration_ms: result.durationMs || 0,
           rateLimit: result.rateLimit,
-          message: result.status >= 400 ? 'RapidAPI error ' + result.status : 'RapidAPI metadata fetch',
+          message: result.status >= 400 ? 'Download API error ' + result.status : 'Download API metadata fetch',
         });
       } catch (trackErr) {
         console.warn('[download] admin track skipped:', trackErr.message);
@@ -86,8 +86,8 @@ exports.handler = async (event, context) => {
           'X-Omni-Cache': cacheHeader,
         },
         body: JSON.stringify({
-          error: 'Empty RapidAPI result',
-          message: 'RapidAPI returned no usable data for this URL.',
+          error: 'Empty download API result',
+          message: 'Download API returned no usable data for this URL.',
           http_status: result.status,
         }),
       };

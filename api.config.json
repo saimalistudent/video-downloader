@@ -6,7 +6,8 @@
   "path": "/v1/social/autolink",
   "body_key": "url",
   "platforms": ["tiktok", "instagram", "facebook", "youtube"],
-  "note": "Production API — do not change without updating RESTORE.md",
-  "backend_url": "",
-  "_backend_url_help": "Netlify Drop users: deploy omni-downloader-vercel.zip to Vercel, set RAPIDAPI_KEY, then paste your Vercel URL here (e.g. https://your-app.vercel.app)"
+  "note": "Frontend uses backend_url when health check passes; api_token sent as Bearer on download/stream",
+  "backend_url": "https://spontaneous-salamander-418289.netlify.app",
+  "api_token": "e2675cdba8f91034",
+  "_backend_url_help": "Separate API server — set OMNI_API_TOKEN there to match api_token"
 }

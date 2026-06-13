@@ -725,6 +725,41 @@
     .dl-progress-track .omni-loader-bar-fill {
       height: 100%;
       border-radius: inherit;
+      transition: width 0.15s ease-out;
+    }
+
+    .dl-progress-track.is-indeterminate {
+      position: relative;
+    }
+
+    .dl-progress-track.is-indeterminate .omni-loader-bar-fill {
+      width: 40% !important;
+      animation: dlIndeterminate 1.35s ease-in-out infinite;
+    }
+
+    @keyframes dlIndeterminate {
+      0% { transform: translateX(-120%); }
+      100% { transform: translateX(320%); }
+    }
+
+    .file-download-box.is-preparing .dl-percent {
+      animation: dlPulseText 1.2s ease-in-out infinite;
+    }
+
+    .file-download-box.is-transferring .dl-progress-track .omni-loader-bar-fill {
+      background: linear-gradient(90deg, #00f5ff, #10b981, #39ff14);
+      background-size: 200% 100%;
+      animation: dlBarFlow 1.8s linear infinite;
+    }
+
+    @keyframes dlBarFlow {
+      0% { background-position: 0% center; }
+      100% { background-position: 200% center; }
+    }
+
+    @keyframes dlPulseText {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.55; }
     }
 
     .dl-dots {
@@ -2004,7 +2039,7 @@
     <div class="rounded-lg border border-amber-500/30 bg-amber-950/40 px-3 py-2 text-amber-100 text-xs leading-relaxed space-y-2">
       <p class="m-0"><strong>Backend not connected.</strong> You used Netlify Drop — it cannot run the download API.</p>
       <p class="m-0"><strong>Option A (keep Netlify Drop):</strong> Run <code class="text-amber-50">SETUP-NETLIFY-DROP.bat</code> → paste your Vercel URL → re-upload folder to Netlify.</p>
-      <p class="m-0"><strong>Option B (recommended):</strong> Run <code class="text-amber-50">DEPLOY-NETLIFY.bat</code> → set <code class="text-amber-50">RAPIDAPI_KEY</code> → Redeploy.</p>
+      <p class="m-0"><strong>Option B (recommended):</strong> Run <code class="text-amber-50">DEPLOY-NETLIFY.bat</code> → set <code class="text-amber-50">DOWNLOAD_API_KEY</code> → Redeploy.</p>
     </div>
   </div>
 
@@ -2700,14 +2735,28 @@
     var API = {
       download: '/api/download',
       stream: '/api/stream',
+      size: '/api/size',
       collect: '/api/admin/collect'
     };
+    var API_TOKEN = '';
+    var API_BACKEND = '';
 
     function applyApiBase(base) {
       var root = String(base || '').trim().replace(/\/$/, '');
+      API_BACKEND = root;
       API.download = (root || '') + '/api/download';
-      API.stream = (root || '') + '/api/stream';
+      API.stream = '/api/stream';
+      API.size = (root || '') + '/api/size';
       API.collect = (root || '') + '/api/admin/collect';
+    }
+
+    function apiAuthHeaders(extra) {
+      var headers = Object.assign({ 'Content-Type': 'application/json' }, extra || {});
+      if (API_TOKEN) {
+        headers.Authorization = 'Bearer ' + API_TOKEN;
+        headers['X-Omni-Token'] = API_TOKEN;
+      }
+      return headers;
     }
 
     function getAnalyticsSessionId() {
@@ -2762,15 +2811,24 @@
       });
     }
 
+    var DEFAULT_BACKEND_CONFIG = {
+      backend_url: 'https://spontaneous-salamander-418289.netlify.app',
+      api_token: 'e2675cdba8f91034'
+    };
+
     async function loadBackendConfigUrl() {
+      var config = null;
       try {
         var response = await fetch('/api.config.json', { cache: 'no-store' });
-        if (!response.ok) return '';
-        var config = await response.json();
-        return String(config.backend_url || '').trim().replace(/\/$/, '');
-      } catch (e) {
-        return '';
+        if (response.ok) config = await response.json();
+      } catch (e) {}
+
+      if (!config || !config.backend_url) {
+        config = DEFAULT_BACKEND_CONFIG;
       }
+
+      API_TOKEN = String(config.api_token || '').trim();
+      return String(config.backend_url || '').trim().replace(/\/$/, '');
     }
 
     async function probeHealth(url) {
@@ -2783,24 +2841,31 @@
     }
 
     async function initProductionApi() {
+      var banner = document.getElementById('netlify-deploy-banner');
       var externalBase = await loadBackendConfigUrl();
       if (externalBase && await probeHealth(externalBase + '/api/health')) {
         applyApiBase(externalBase);
+        if (banner) banner.classList.add('hidden');
+        console.info('[Omni] External API backend:', externalBase);
         return true;
       }
 
       if (await probeHealth('/api/health')) {
         applyApiBase('');
+        if (banner) banner.classList.add('hidden');
+        console.info('[Omni] Local API backend');
         return true;
       }
 
       if (await probeHealth('/.netlify/functions/health')) {
         API.download = '/.netlify/functions/download';
         API.stream = '/.netlify/functions/stream';
+        API.size = '/.netlify/functions/size';
+        if (banner) banner.classList.add('hidden');
+        console.info('[Omni] Netlify functions backend');
         return true;
       }
 
-      var banner = document.getElementById('netlify-deploy-banner');
       if (banner) banner.classList.remove('hidden');
       return false;
     }
@@ -3093,6 +3158,8 @@
 
     var downloadAnimTimer = null;
     var downloadStageTimers = [];
+    var downloadQueue = [];
+    var downloadQueueActive = false;
 
     function stopDownloadAnimTimers() {
       if (downloadAnimTimer) {
@@ -3104,25 +3171,36 @@
     }
 
     function setDownloadProgress(percent, title, text, state) {
-      var pct = Math.min(100, Math.max(0, percent));
       var bar = document.getElementById('file-download-bar');
       var percentEl = document.getElementById('file-download-percent');
       var box = document.getElementById('file-download-box');
+      var track = document.querySelector('#file-download-box .dl-progress-track');
       var titleEl = document.getElementById('file-download-title');
       var textEl = document.getElementById('file-download-text');
       var activeIcon = document.getElementById('file-download-icon');
       var successIcon = document.getElementById('file-download-success-icon');
 
-      if (bar) bar.style.width = pct + '%';
-      if (percentEl) percentEl.textContent = Math.round(pct) + '%';
-      if (title && titleEl) titleEl.textContent = title;
-      if (text && textEl) textEl.textContent = text;
-
       if (box) {
-        box.classList.remove('is-success', 'is-opening');
+        box.classList.remove('is-success', 'is-opening', 'is-preparing', 'is-transferring');
         if (state === 'success') box.classList.add('is-success');
         if (state === 'opening') box.classList.add('is-opening');
+        if (state === 'preparing' || state === 'queued') box.classList.add('is-preparing');
+        if (state === 'downloading') box.classList.add('is-transferring');
       }
+
+      if (percent === null || percent === undefined) {
+        if (track) track.classList.add('is-indeterminate');
+        if (bar) bar.style.width = '';
+        if (percentEl) percentEl.textContent = '…';
+      } else {
+        if (track) track.classList.remove('is-indeterminate');
+        var pct = Math.min(100, Math.max(0, percent));
+        if (bar) bar.style.width = pct + '%';
+        if (percentEl) percentEl.textContent = Math.round(pct) + '%';
+      }
+
+      if (title && titleEl) titleEl.textContent = title;
+      if (text && textEl) textEl.textContent = text;
 
       if (state === 'success') {
         if (activeIcon) activeIcon.classList.add('hidden');
@@ -3136,41 +3214,61 @@
       }
     }
 
-    function startDownloadAnimLoop(isAudio) {
+    function startPrepareProgress(isAudio, label) {
       stopDownloadAnimTimers();
-      var stages = isLiteMode()
-        ? [
-          { at: 0, pct: 10, title: isAudio ? 'Fetching MP3…' : 'Fetching video…', text: 'Connecting…' },
-          { at: 1200, pct: 45, title: 'Downloading…', text: 'Saving to your device…' },
-          { at: 2800, pct: 70, title: 'Almost done…', text: 'Please wait…' }
-        ]
-        : [
-          { at: 0, pct: 6, title: isAudio ? 'Fetching MP3…' : 'Fetching video…', text: 'Connecting to source…' },
-          { at: 700, pct: 24, title: 'Downloading…', text: 'Pulling file through secure server…' },
-          { at: 1600, pct: 42, title: 'Downloading…', text: 'Saving to your Downloads folder…' },
-          { at: 2800, pct: 58, title: 'Almost there…', text: 'Processing video data…' },
-          { at: 4200, pct: 72, title: 'Saving file…', text: 'You stay on this page…' }
-        ];
-
-      stages.forEach(function (stage) {
-        var timer = setTimeout(function () {
-          setDownloadProgress(stage.pct, stage.title, stage.text, 'downloading');
-        }, stage.at);
-        downloadStageTimers.push(timer);
-      });
-
+      var started = Date.now();
+      var baseTitle = label || (isAudio ? 'Preparing MP3…' : 'Preparing video…');
+      setDownloadProgress(null, baseTitle, 'Server is extracting your file…', 'preparing');
       downloadAnimTimer = setInterval(function () {
-        var bar = document.getElementById('file-download-bar');
-        if (!bar) return;
-        var current = parseFloat(bar.style.width) || 6;
-        if (current < 86) {
-          var step = isLiteMode() ? 1.2 : (Math.random() * 2.2 + 0.6);
-          var next = current + step;
-          bar.style.width = next + '%';
-          var percentEl = document.getElementById('file-download-percent');
-          if (percentEl) percentEl.textContent = Math.round(next) + '%';
+        var elapsed = Math.floor((Date.now() - started) / 1000);
+        var detail = elapsed > 2
+          ? ('Working on server · ' + elapsed + 's elapsed')
+          : 'Connecting to download server…';
+        setDownloadProgress(null, baseTitle, detail, 'preparing');
+      }, 900);
+    }
+
+    function endPrepareProgress() {
+      if (downloadAnimTimer) {
+        clearInterval(downloadAnimTimer);
+        downloadAnimTimer = null;
+      }
+      var track = document.querySelector('#file-download-box .dl-progress-track');
+      if (track) track.classList.remove('is-indeterminate');
+    }
+
+    function mapTransferPercent(rawPct) {
+      return Math.min(99, 12 + Math.round(Math.max(0, rawPct) * 0.87));
+    }
+
+    function enqueueUserDownload(jobFn) {
+      return new Promise(function (resolve, reject) {
+        downloadQueue.push({ fn: jobFn, resolve: resolve, reject: reject });
+        var position = downloadQueue.length + (downloadQueueActive ? 1 : 0);
+        if (position > 1) {
+          showFileDownloadOverlay(
+            true,
+            'In queue…',
+            'Position ' + position + ' — downloads run one at a time for stability',
+            null,
+            'queued'
+          );
         }
-      }, getAnimInterval());
+        pumpDownloadQueue();
+      });
+    }
+
+    function pumpDownloadQueue() {
+      if (downloadQueueActive || !downloadQueue.length) return;
+      downloadQueueActive = true;
+      var job = downloadQueue.shift();
+      Promise.resolve()
+        .then(function () { return job.fn(); })
+        .then(job.resolve, job.reject)
+        .finally(function () {
+          downloadQueueActive = false;
+          pumpDownloadQueue();
+        });
     }
 
     function showFileDownloadOverlay(show, title, text, progress, state) {
@@ -3178,16 +3276,22 @@
       if (!overlay) return;
 
       if (show) {
-        setDownloadProgress(progress || 0, title, text, state || 'downloading');
+        setDownloadProgress(
+          progress === null || progress === undefined ? null : (progress || 0),
+          title,
+          text,
+          state || 'downloading'
+        );
         overlay.classList.remove('hidden');
         requestAnimationFrame(function () { overlay.classList.add('show'); });
       } else {
         stopDownloadAnimTimers();
+        endPrepareProgress();
         overlay.classList.remove('show');
         setTimeout(function () {
           overlay.classList.add('hidden');
           var box = document.getElementById('file-download-box');
-          if (box) box.classList.remove('is-success', 'is-opening');
+          if (box) box.classList.remove('is-success', 'is-opening', 'is-preparing', 'is-transferring');
         }, 400);
       }
     }
@@ -3318,7 +3422,10 @@
       if (!url) return 0;
       if (/googlevideo\.com|gvt1\.com/i.test(url)) return 0;
       try {
-        var res = await fetch('/api/size?url=' + encodeURIComponent(url), { cache: 'no-store' });
+        await apiInitPromise;
+        var sizeUrl = API.size + '?url=' + encodeURIComponent(url);
+        if (API_TOKEN) sizeUrl += '&token=' + encodeURIComponent(API_TOKEN);
+        var res = await fetch(sizeUrl, { cache: 'no-store', headers: apiAuthHeaders() });
         if (!res.ok) return 0;
         var payload = await res.json();
         return parseInt(payload.bytes, 10) || 0;
@@ -3649,7 +3756,9 @@
         var num = slide.index || (i + 1);
         var ext = slide.ext || 'jpg';
         try {
-          await downloadWithFastAutoSave(slide.url, baseName + '-slide-' + num + '.' + ext, 0, false, platform, 'slide');
+          await enqueueUserDownload(function () {
+            return downloadWithFastAutoSave(slide.url, baseName + '-slide-' + num + '.' + ext, 0, false, platform, 'slide');
+          });
           if (i < ctx.slides.length - 1) await sleep(400);
         } catch (err) {
           showToast('Slide ' + num + ' failed — continuing…', 'error');
@@ -3817,12 +3926,23 @@
       return isLiteMode() ? 550 : 320;
     }
 
-    function buildStreamUrl(mediaUrl, filename, sizeBytes) {
-      if (!mediaUrl) return '#';
-      var name = encodeURIComponent(filename || 'video.mp4');
-      var url = API.stream + '?url=' + encodeURIComponent(mediaUrl) + '&name=' + name;
+    function buildStreamUrl(mediaUrl, filename, sizeBytes, platform, isAudio, streamBaseOverride) {
+      var ctx = lastFetchContext[platform || 'all'];
+      var pageUrl = (ctx && ctx.url) || '';
+      var target = pageUrl || mediaUrl;
+      if (!target) return '#';
+      var base = streamBaseOverride || API.stream || '/api/stream';
+      var name = encodeURIComponent(filename || (isAudio ? 'audio.mp3' : 'video.mp4'));
+      var url = base + '?url=' + encodeURIComponent(target) + '&name=' + name;
       if (sizeBytes > 0) url += '&size=' + sizeBytes;
+      if (pageUrl) url += '&page_url=' + encodeURIComponent(pageUrl);
+      if (isAudio) url += '&audio=1';
+      if (streamBaseOverride && API_TOKEN) url += '&token=' + encodeURIComponent(API_TOKEN);
       return url;
+    }
+
+    function isVideoPageUrl(url) {
+      return /tiktok\.com|instagram\.com\/(reel|p|tv)|facebook\.com|fb\.watch|youtube\.com|youtu\.be/i.test(String(url || ''));
     }
 
     function formatSpeed(bytesPerSec) {
@@ -3878,21 +3998,27 @@
       var startedAt = Date.now();
       var lastUiAt = 0;
       var received = 0;
+      var prepareEnded = false;
 
       function emitProgress(force) {
+        if (!prepareEnded && received > 0) {
+          prepareEnded = true;
+          endPrepareProgress();
+        }
         var now = Date.now();
-        if (!force && now - lastUiAt < 100 && received > 0) return;
+        if (!force && now - lastUiAt < 80 && received > 0) return;
         lastUiAt = now;
         var elapsed = Math.max(0.05, (now - startedAt) / 1000);
         var speed = received / elapsed;
         var total = expectedTotal;
         if (received > total && received > 0) total = received;
-        var pct;
+        var rawPct;
         if (total > 0) {
-          pct = Math.min(99, Math.round((received / total) * 100));
+          rawPct = Math.min(100, (received / total) * 100);
         } else {
-          pct = Math.min(88, 8 + Math.floor(Math.log10(received + 1) * 20));
+          rawPct = Math.min(100, Math.log10(received + 1) * 22);
         }
+        var pct = mapTransferPercent(rawPct);
         var detail = total > 0
           ? formatBytes(received, false) + ' / ' + formatBytes(total, false) + ' · ' + formatSpeed(speed)
           : formatBytes(received, false) + ' · ' + formatSpeed(speed);
@@ -3903,6 +4029,7 @@
       }
 
       if (!response.body || typeof response.body.getReader !== 'function') {
+        endPrepareProgress();
         var fallbackBlob = await response.blob();
         setDownloadProgress(99, 'Saving…', formatBytes(fallbackBlob.size, false), 'downloading');
         return fallbackBlob;
@@ -3920,6 +4047,7 @@
         emitProgress(false);
       }
 
+      endPrepareProgress();
       if (received > expectedTotal) expectedTotal = received;
       emitProgress(true);
       setDownloadProgress(99, 'Saving…', formatBytes(received, false), 'downloading');
@@ -3967,7 +4095,7 @@
       setDownloadProgress(20, 'Downloading…', 'Trying secure relay…', 'downloading');
       try {
         await apiInitPromise;
-        var streamRes = await fetch(buildStreamUrl(mediaUrl, filename, expectedBytes));
+        var streamRes = await fetch(buildStreamUrl(mediaUrl, filename, expectedBytes, platform, false));
         if (streamRes.ok) {
           var ct = streamRes.headers.get('content-type') || '';
           if (!/application\/json/i.test(ct)) {
@@ -4022,10 +4150,10 @@
       }
 
       stopDownloadAnimTimers();
-      showFileDownloadOverlay(true, isAudio ? 'Saving MP3…' : 'Saving video…', 'Connecting…', 0, 'downloading');
+      showFileDownloadOverlay(true, isAudio ? 'Saving MP3…' : 'Saving video…', 'Connecting…', 0, 'preparing');
 
       try {
-        setDownloadProgress(1, 'Connecting…', 'Direct high-speed link…', 'downloading');
+        setDownloadProgress(null, 'Connecting…', 'Trying direct link…', 'preparing');
         var directRes = await fetch(mediaUrl, {
           method: 'GET',
           mode: 'cors',
@@ -4046,42 +4174,24 @@
           }
         }
       } catch (directErr) {
-        /* CORS blocked — use backend relay */
+        /* CORS blocked — use server yt-dlp relay */
       }
 
-      setDownloadProgress(2, 'Connecting…', 'Secure server relay…', 'downloading');
+      startPrepareProgress(isAudio, isAudio ? 'Preparing MP3…' : 'Preparing video…');
       await apiInitPromise;
-      var streamUrl = buildStreamUrl(mediaUrl, filename, expectedBytes);
-      var response = await fetch(streamUrl);
+      var streamUrl = buildStreamUrl(mediaUrl, filename, expectedBytes, platform, isAudio);
+      var response = await fetchStreamWithRetry(streamUrl, {
+        platform: platform,
+        tier: tier,
+        isAudio: isAudio,
+        maxAttempts: 4,
+        timeoutMs: 180000
+      });
+      if (response && response.blocked) return;
 
-      if (!response.ok) {
-        var errText = '';
-        var errJson = null;
-        try {
-          errJson = await response.json();
-          errText = errJson.message || errJson.error || '';
-        } catch (parseErr) {
-          errText = 'HTTP ' + response.status;
-        }
-        if (isAdminBlockedError(errText)) {
-          showFileDownloadOverlay(false);
-          showBlockedModal('This video cannot be downloaded — the creator or platform restricted saving it.');
-          trackAnalytics('download_fail', { platform: platform, tier: tier, message: 'Creator blocked', meta: { blocked: true } });
-          return;
-        }
-        throw new Error(errText || ('Download failed (HTTP ' + response.status + ')'));
-      }
-
-      var contentType = response.headers.get('content-type') || '';
-      if (/application\/json/i.test(contentType)) {
-        var directPayload = await response.json();
-        throw new Error(directPayload.message || directPayload.error || 'Download failed');
-      }
-
+      var streamType = response.headers.get('content-type') || '';
       var blob = await readStreamToBlob(response, { expectedBytes: expectedBytes });
-      if (!blob || !blob.size) {
-        throw new Error('Empty file received — link may have expired. Fetch the video again.');
-      }
+      validateDownloadBlob(blob, streamType, expectedBytes, isAudio);
 
       saveBlobAsFile(blob, filename);
       finishDownloadSuccess(isAudio, platform, tier);
@@ -4115,7 +4225,9 @@
       });
 
       try {
-        await downloadWithFastAutoSave(mediaUrl, filename, expectedBytes, isAudio, platform, tier);
+        await enqueueUserDownload(function () {
+          return downloadWithFastAutoSave(mediaUrl, filename, expectedBytes, isAudio, platform, tier);
+        });
       } catch (err) {
         var ctx = lastFetchContext[platform];
         if (isExpiredLinkError(err) && ctx && !ctx.linkRefreshUsed) {
@@ -4144,8 +4256,22 @@
               tier: tier,
               message: ('Refresh failed: ' + (refreshErr.message || 'unknown')).slice(0, 300)
             });
-            showToast('Could not refresh link — paste the URL and fetch again.', 'error');
+            showToast('Could not refresh link — try Download again or open the direct link.', 'error');
             return;
+          }
+        }
+
+        if (isRetryableDownloadError(err) && !btn.getAttribute('data-retry-used')) {
+          btn.setAttribute('data-retry-used', '1');
+          try {
+            showFileDownloadOverlay(true, isAudio ? 'Saving MP3…' : 'Saving video…', 'Trying once more…', 10, 'downloading');
+            await sleep(3000);
+            await downloadWithFastAutoSave(mediaUrl, filename, expectedBytes, isAudio, platform, tier);
+            btn.removeAttribute('data-retry-used');
+            return;
+          } catch (retryErr) {
+            btn.removeAttribute('data-retry-used');
+            err = retryErr;
           }
         }
 
@@ -4306,6 +4432,111 @@
       return /expired|empty file|link may have|403|404|410|forbidden|not found|failed \(http/i.test(msg);
     }
 
+    function isRetryableDownloadError(err) {
+      var msg = String(err && err.message ? err.message : err || '').toLowerCase();
+      if (/admin\s*\/\s*creator|creator has not allowed|not allowed downloading|private video|private account/i.test(msg)) {
+        return false;
+      }
+      return /yt-dlp|extract|timeout|aborted|failed to fetch|network|502|503|504|429|stream error|unexpected response|unable to|temporarily|try again|too small|page instead|empty file|server is busy|queue/i.test(msg);
+    }
+
+    function validateDownloadBlob(blob, contentType, expectedBytes, isAudio) {
+      if (!blob || !blob.size) {
+        throw new Error('Empty file received — link may have expired. Fetch the video again.');
+      }
+      if (/text\/html/i.test(contentType || '')) {
+        throw new Error('Server returned a page instead of a file — try again.');
+      }
+      var minSize = isAudio ? 1024 : 4096;
+      if (expectedBytes > 65536 && blob.size < expectedBytes * 0.05) {
+        throw new Error('File too small — download may have failed. Try again.');
+      }
+      if (blob.size < minSize) {
+        throw new Error('File too small — try again.');
+      }
+    }
+
+    async function fetchStreamWithRetry(streamUrl, options) {
+      options = options || {};
+      var maxAttempts = options.maxAttempts || 4;
+      var timeoutMs = options.timeoutMs || 180000;
+      var lastErr = null;
+
+      for (var attempt = 0; attempt < maxAttempts; attempt += 1) {
+        try {
+          if (attempt > 0) {
+            startPrepareProgress(options.isAudio, 'Retrying download…');
+            setDownloadProgress(null, 'Retrying…', 'Attempt ' + (attempt + 1) + ' of ' + maxAttempts, 'preparing');
+            await sleep(2000 * attempt);
+          }
+
+          var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+          var timeoutId = null;
+          if (controller) {
+            timeoutId = setTimeout(function () { controller.abort(); }, timeoutMs);
+          }
+
+          var response = await fetch(streamUrl, {
+            headers: options.headers || {},
+            signal: controller ? controller.signal : undefined,
+            cache: 'no-store'
+          });
+
+          if (timeoutId) clearTimeout(timeoutId);
+
+          if (!response.ok) {
+            var errText = '';
+            var retryAfterSec = parseInt(response.headers.get('Retry-After') || '0', 10) || 0;
+            try {
+              var errJson = await response.clone().json();
+              errText = errJson.message || errJson.error || '';
+            } catch (parseErr) {
+              errText = 'HTTP ' + response.status;
+            }
+            if (isAdminBlockedError(errText)) {
+              showFileDownloadOverlay(false);
+              showBlockedModal('This video cannot be downloaded — the creator or platform restricted saving it.');
+              trackAnalytics('download_fail', {
+                platform: options.platform,
+                tier: options.tier,
+                message: 'Creator blocked',
+                meta: { blocked: true }
+              });
+              return { blocked: true };
+            }
+            var httpErr = new Error(errText || ('Download failed (HTTP ' + response.status + ')'));
+            if (response.status === 503 && retryAfterSec > 0) {
+              httpErr.retryAfter = retryAfterSec;
+            }
+            if (response.status >= 500 || response.status === 408 || response.status === 429 || response.status === 503) {
+              throw httpErr;
+            }
+            throw httpErr;
+          }
+
+          var contentType = response.headers.get('content-type') || '';
+          if (/application\/json/i.test(contentType)) {
+            var directPayload = await response.json();
+            throw new Error(directPayload.message || directPayload.error || 'Download failed');
+          }
+
+          return response;
+        } catch (err) {
+          lastErr = err;
+          if (err && err.retryAfter && attempt < maxAttempts - 1) {
+            startPrepareProgress(options.isAudio, 'Server busy…');
+            setDownloadProgress(null, 'Server busy…', 'Retry in ' + err.retryAfter + 's', 'preparing');
+            await sleep(err.retryAfter * 1000);
+            continue;
+          }
+          if (attempt >= maxAttempts - 1 || !isRetryableDownloadError(err)) {
+            throw err;
+          }
+        }
+      }
+      throw lastErr || new Error('Download failed');
+    }
+
     function findDownloadButtonAfterRefresh(platform, tier, isAudio) {
       var root = '#result-' + platform;
       if (isAudio) return document.querySelector(root + ' .btn-download-audio');
@@ -4366,7 +4597,7 @@
        ============================================================ */
     async function callAllInOneApi(videoUrl, options) {
       options = options || {};
-      var headers = { 'Content-Type': 'application/json' };
+      var headers = apiAuthHeaders();
       if (options.refresh) headers['X-Omni-Refresh'] = '1';
       return fetch(API.download, {
         method: 'POST',
@@ -4417,7 +4648,7 @@
       }
 
       if (!text || !text.trim()) {
-        throw new Error('Empty response (HTTP ' + response.status + '). Check Netlify function logs and RAPIDAPI_KEY.');
+        throw new Error('Empty response (HTTP ' + response.status + '). Check Netlify function logs and DOWNLOAD_API_KEY.');
       }
 
       try {
@@ -4457,15 +4688,15 @@
           throw new Error((data && data.message) || lastError + hint + sub);
         }
 
-        if (/rapidapi_key is not configured|not configured/i.test(lastError)) {
-          throw new Error('RapidAPI key missing — add RAPIDAPI_KEY in Netlify Environment variables and Redeploy.');
+        if (/rapidapi_key is not configured|not configured|download_api_key/i.test(lastError)) {
+          throw new Error('Download API key missing — add DOWNLOAD_API_KEY in Netlify Environment variables and Redeploy.');
         }
 
         if (/quota|exceeded|monthly.*limit|upgrade your plan/i.test(lastError)) {
           var rl = data && data._rateLimit;
           var resetDays = rl && rl.reset ? Math.ceil(parseInt(rl.reset, 10) / 86400) : 0;
           var resetNote = resetDays > 0 ? (' Resets in ~' + resetDays + ' days.') : '';
-          throw new Error('RapidAPI limit full (100/100 used this month).' + resetNote + ' Only previously fetched links work from cache. Upgrade Pro ($2/mo): rapidapi.com → Social Download All In One → Pro.');
+          throw new Error('API monthly limit reached.' + resetNote + ' Cached links still work. Upgrade your API plan or wait for reset.');
         }
 
         if (/upgrade/i.test(lastError) && /facebook/i.test(lastError)) {
@@ -4487,7 +4718,7 @@
     }
 
     /* ============================================================
-       RapidAPI fetch — core download logic
+       Video fetch — core download logic
        ============================================================ */
     async function fetchVideo(inputId, platform) {
       var input = document.getElementById(inputId);
@@ -4584,7 +4815,7 @@
     }
 
     /* ============================================================
-       Normalize varying RapidAPI response shapes
+       Normalize varying download API response shapes
        ============================================================ */
     function unwrapApiPayload(data) {
       if (data && data.data && typeof data.data === 'object' && !Array.isArray(data.data)) {

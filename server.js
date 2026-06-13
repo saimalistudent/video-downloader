@@ -3,6 +3,7 @@
  * Express + sqlite3 + express-session for admin panel & API
  */
 const path = require('path');
+const fs = require('fs');
 const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
 const express = require('express');
@@ -18,6 +19,8 @@ const {
   upstreamHeaders,
   probeMediaSize,
 } = require('./lib/api-proxy');
+const { isVideoPageUrl, downloadYtdlpToFile } = require('./lib/ytdlp-runner');
+const { withDownloadSlot, getQueueStats } = require('./lib/download-queue');
 const { resolveDownloadWithCache, clientIpFromRequest } = require('./lib/link-cache');
 const { verifyLogin, authFromEvent } = require('./lib/admin-auth');
 const { getDashboardStats, updatePlanLimit } = require('./lib/admin-db');
@@ -94,6 +97,7 @@ app.get('/api/health', function (req, res) {
     rapidapi_configured: Boolean(getApiKey()),
     admin_configured: Boolean(process.env.ADMIN_PASSWORD),
     storage: 'sqlite3',
+    download_queue: getQueueStats(),
   });
 });
 
@@ -243,10 +247,50 @@ app.get('/api/size', async function (req, res) {
 app.get('/api/stream', async function (req, res) {
   try {
     let mediaUrl = normalizeVideoUrl(String(req.query.url || '').trim());
+    const pageUrl = normalizeVideoUrl(String(req.query.page_url || '').trim());
     const filename = String(req.query.name || 'video.mp4').trim() || 'video.mp4';
     const expectedSize = parseInt(String(req.query.size || '0'), 10) || 0;
+    const isAudio = String(req.query.audio || '') === '1';
 
     if (!mediaUrl) return res.status(400).json({ error: 'Missing url parameter' });
+
+    const ytdlpSource = pageUrl || (isVideoPageUrl(mediaUrl) ? mediaUrl : '');
+    if (ytdlpSource) {
+      const safeName = filename.replace(/"/g, '');
+      const contentType = isAudio ? 'audio/mpeg' : 'video/mp4';
+      let filePath;
+      let tmpDir;
+      try {
+        const result = await withDownloadSlot(function () {
+          return downloadYtdlpToFile(ytdlpSource, { audio: isAudio });
+        });
+        filePath = result.filePath;
+        tmpDir = result.tmpDir;
+      } catch (queueErr) {
+        const status = queueErr.status || 502;
+        if (status === 503) {
+          res.setHeader('Retry-After', String(queueErr.retryAfter || 15));
+        }
+        return res.status(status).json({
+          error: queueErr.message || 'Download queue error',
+          message: queueErr.message || 'Server busy — try again shortly.',
+        });
+      }
+      try {
+        const stat = fs.statSync(filePath);
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Disposition', 'attachment; filename="' + safeName + '"');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Content-Length', String(stat.size));
+        await pipeline(fs.createReadStream(filePath), res);
+      } finally {
+        try {
+          fs.unlinkSync(filePath);
+          fs.rmdirSync(tmpDir);
+        } catch (cleanupErr) { /* ignore */ }
+      }
+      return;
+    }
 
     const headers = upstreamHeaders(mediaUrl);
     let upstream = await fetch(mediaUrl, { headers: headers });
