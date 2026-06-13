@@ -3232,8 +3232,8 @@
       }
 
       if (percent === null || percent === undefined) {
-        if (track) track.classList.add('is-indeterminate');
-        if (bar) bar.style.width = '';
+        if (track) track.classList.remove('is-indeterminate');
+        if (bar) bar.style.width = '5%';
         if (percentEl) percentEl.textContent = '…';
       } else {
         if (track) track.classList.remove('is-indeterminate');
@@ -3260,7 +3260,7 @@
     function startPrepareProgress(isAudio, label) {
       stopDownloadAnimTimers();
       var baseTitle = label || (isAudio ? 'Preparing MP3…' : 'Preparing video…');
-      setDownloadProgress(null, baseTitle, 'Connecting to server…', 'preparing');
+      setDownloadProgress(5, baseTitle, 'Connecting to server…', 'preparing');
     }
 
     function endPrepareProgress() {
@@ -3549,7 +3549,7 @@
       if (!data) return data;
       var urls = [];
       (data.videoVariants || []).forEach(function (v) {
-        if (v.url && !v.sizeExact && urls.indexOf(v.url) === -1) urls.push(v.url);
+        if (v.url && !v.sizeExact && (!v.sizeBytes || v.sizeBytes <= 0) && urls.indexOf(v.url) === -1) urls.push(v.url);
       });
       if (data.audioDownloadUrl && !data.audioSizeBytes && urls.indexOf(data.audioDownloadUrl) === -1) {
         urls.push(data.audioDownloadUrl);
@@ -4057,6 +4057,27 @@
       }, 3000);
     }
 
+    function triggerNativeStreamDownload(streamUrl, filename) {
+      var link = document.createElement('a');
+      link.href = streamUrl;
+      link.setAttribute('download', filename || 'video.mp4');
+      link.rel = 'noopener';
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(function () { link.remove(); }, 3000);
+    }
+
+    async function downloadViaNativeStream(mediaUrl, filename, expectedBytes, isAudio, platform, tier, options) {
+      options = options || {};
+      await apiInitPromise;
+      var streamUrl = buildStreamUrl(mediaUrl, filename, expectedBytes, platform, isAudio, null, options);
+      setDownloadProgress(20, isAudio ? 'Saving MP3…' : 'Saving video…', 'Starting download — check your browser downloads bar', 'downloading');
+      triggerNativeStreamDownload(streamUrl, filename);
+      finishDownloadSuccess(isAudio, platform, tier);
+      return true;
+    }
+
     function finishDownloadSuccess(isAudio, platform, tier) {
       stopDownloadAnimTimers();
       showFileDownloadOverlay(true, 'Download complete!', 'Saved to your downloads folder', 100, 'success');
@@ -4174,45 +4195,20 @@
         console.warn('YouTube refresh skipped:', refreshErr);
       }
 
-      setDownloadProgress(20, 'Downloading…', 'Trying secure relay…', 'downloading');
       try {
-        await apiInitPromise;
-        var streamRes = await fetch(buildStreamUrl(mediaUrl, filename, expectedBytes, platform, false));
-        if (streamRes.ok) {
-          var ct = streamRes.headers.get('content-type') || '';
-          if (!/application\/json/i.test(ct)) {
-            var blob = await readStreamToBlob(streamRes, { expectedBytes: expectedBytes });
-            if (blob && blob.size > 0) {
-              saveBlobAsFile(blob, filename);
-              finishDownloadSuccess(false, platform, tier);
-              return;
-            }
-          }
-        }
-      } catch (streamErr) {
-        console.warn('YouTube stream relay failed:', streamErr);
+        var nativeResult = await downloadViaNativeStream(mediaUrl, filename, expectedBytes, false, platform, tier, {});
+        if (nativeResult === true || nativeResult === 'blocked') return;
+      } catch (nativeErr) {
+        console.warn('YouTube native stream failed:', nativeErr);
       }
 
-      stopDownloadAnimTimers();
-      showFileDownloadOverlay(false);
-
-      var link = document.createElement('a');
-      link.href = mediaUrl;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-
-      showToast('YouTube download opened — if video plays, tap ⋮ → Download or long-press → Save', 'success', 'YouTube');
-      trackAnalytics('download_success', {
-        platform: platform,
-        tier: tier,
-        type: 'video',
-        message: 'YouTube browser direct'
-      });
-      markSuccessfulDownload();
+      try {
+        await downloadViaNativeStream(mediaUrl, filename, expectedBytes, false, platform, tier, { ytdlpFallback: true });
+      } catch (ytdlpErr) {
+        stopDownloadAnimTimers();
+        showFileDownloadOverlay(false);
+        throw ytdlpErr;
+      }
     }
 
     async function downloadWithFastAutoSave(mediaUrl, filename, expectedBytes, isAudio, platform, tier) {
@@ -4228,18 +4224,13 @@
 
       if (isAudio && isVideoPageUrl(mediaUrl)) {
         stopDownloadAnimTimers();
-        showFileDownloadOverlay(true, 'Saving MP3…', 'Extracting audio from video…', null, 'preparing');
-        await apiInitPromise;
-        var extractUrl = buildStreamUrl(mediaUrl, filename, expectedBytes, platform, true, null, { ytdlpFallback: true });
-        var extractRes = await fetchStreamWithRetry(extractUrl, {
-          platform: platform, tier: tier, isAudio: true, maxAttempts: 2, timeoutMs: 120000, prepareUi: false
-        });
-        if (extractRes && extractRes.blocked) return;
-        var extractBlob = await readStreamToBlob(extractRes, { expectedBytes: expectedBytes });
-        validateDownloadBlob(extractBlob, extractRes.headers.get('content-type') || '', expectedBytes, true);
-        saveBlobAsFile(extractBlob, filename);
-        finishDownloadSuccess(true, platform, tier);
-        return;
+        showFileDownloadOverlay(true, 'Saving MP3…', 'Extracting audio from video…', 5, 'preparing');
+        try {
+          var audioNative = await downloadViaNativeStream(mediaUrl, filename, expectedBytes, true, platform, tier, { ytdlpFallback: true });
+          if (audioNative === true || audioNative === 'blocked') return;
+        } catch (audioErr) {
+          console.warn('Native MP3 stream failed, trying blob relay:', audioErr);
+        }
       }
 
       if (!isAudio && isGoogleVideoUrl(mediaUrl)) {
@@ -4248,31 +4239,23 @@
       }
 
       stopDownloadAnimTimers();
-      showFileDownloadOverlay(true, isAudio ? 'Saving MP3…' : 'Saving video…', 'Connecting…', 0, 'preparing');
+      showFileDownloadOverlay(true, isAudio ? 'Saving MP3…' : 'Saving video…', 'Connecting…', 5, 'preparing');
 
-      try {
-        setDownloadProgress(null, 'Connecting…', 'Trying direct link…', 'preparing');
-        var directRes = await fetch(mediaUrl, {
-          method: 'GET',
-          mode: 'cors',
-          credentials: 'omit',
-          referrerPolicy: 'no-referrer',
-          cache: 'no-store'
-        });
-
-        if (directRes.ok) {
-          var directType = directRes.headers.get('content-type') || '';
-          if (!/application\/json/i.test(directType)) {
-            var directBlob = await readStreamToBlob(directRes, { expectedBytes: expectedBytes });
-            if (directBlob && directBlob.size > 0) {
-              saveBlobAsFile(directBlob, filename);
-              finishDownloadSuccess(isAudio, platform, tier);
-              return;
-            }
-          }
+      if (isDirectMediaUrl(mediaUrl)) {
+        try {
+          var fastNative = await downloadViaNativeStream(mediaUrl, filename, expectedBytes, isAudio, platform, tier, {});
+          if (fastNative === true || fastNative === 'blocked') return;
+        } catch (fastErr) {
+          console.warn('Fast CDN native download failed, trying yt-dlp:', fastErr);
         }
-      } catch (directErr) {
-        /* CORS blocked — use server relay */
+      }
+
+      startPrepareProgress(isAudio, isAudio ? 'Preparing MP3…' : 'Preparing video…');
+      try {
+        var slowNative = await downloadViaNativeStream(mediaUrl, filename, expectedBytes, isAudio, platform, tier, { ytdlpFallback: true });
+        if (slowNative === true || slowNative === 'blocked') return;
+      } catch (slowErr) {
+        console.warn('Native yt-dlp stream failed, trying blob relay:', slowErr);
       }
 
       await apiInitPromise;
@@ -4285,7 +4268,7 @@
           isAudio: isAudio,
           maxAttempts: options.maxAttempts || 2,
           timeoutMs: options.timeoutMs || 120000,
-          prepareUi: options.prepareUi !== false
+          prepareUi: false
         });
         if (response && response.blocked) return 'blocked';
         var streamType = response.headers.get('content-type') || '';
@@ -4297,19 +4280,17 @@
       }
 
       if (isDirectMediaUrl(mediaUrl)) {
-        setDownloadProgress(null, 'Downloading…', 'Fast relay — direct link…', 'downloading');
         try {
           var fastUrl = buildStreamUrl(mediaUrl, filename, expectedBytes, platform, isAudio);
-          var fastResult = await streamToFile(fastUrl, { maxAttempts: 2, timeoutMs: 90000, prepareUi: false });
+          var fastResult = await streamToFile(fastUrl, { maxAttempts: 2, timeoutMs: 90000 });
           if (fastResult === true || fastResult === 'blocked') return;
-        } catch (fastErr) {
-          console.warn('Fast CDN relay failed, trying yt-dlp:', fastErr);
+        } catch (blobFastErr) {
+          console.warn('Blob CDN relay failed:', blobFastErr);
         }
       }
 
-      startPrepareProgress(isAudio, isAudio ? 'Preparing MP3…' : 'Preparing video…');
       var slowUrl = buildStreamUrl(mediaUrl, filename, expectedBytes, platform, isAudio, null, { ytdlpFallback: true });
-      await streamToFile(slowUrl, { maxAttempts: 2, timeoutMs: 120000, prepareUi: false });
+      await streamToFile(slowUrl, { maxAttempts: 2, timeoutMs: 120000 });
     }
 
     async function handleMediaDownload(e, btn) {
@@ -4339,67 +4320,17 @@
         message: isAudio ? 'MP3 download started' : 'Video download started'
       });
 
-      try {
-        await enqueueUserDownload(function () {
-          return downloadWithFastAutoSave(mediaUrl, filename, expectedBytes, isAudio, platform, tier);
-        });
-      } catch (err) {
-        var ctx = lastFetchContext[platform];
-        if (isExpiredLinkError(err) && ctx && !ctx.linkRefreshUsed) {
-          try {
-            showToast('Link expired — getting a fresh download link…', 'info', 'Refreshing');
-            showFileDownloadOverlay(true, 'Refreshing link…', 'Please wait a moment', 15, 'downloading');
-            await refreshVideoLinks(platform);
-            var freshBtn = findDownloadButtonAfterRefresh(platform, tier, isAudio);
-            if (freshBtn && freshBtn.getAttribute('data-media-url')) {
-              showFileDownloadOverlay(true, isAudio ? 'Saving MP3…' : 'Saving video…', 'Retrying download…', 20, 'downloading');
-              await downloadWithFastAutoSave(
-                freshBtn.getAttribute('data-media-url'),
-                freshBtn.getAttribute('data-filename') || filename,
-                parseInt(freshBtn.getAttribute('data-size-bytes') || '0', 10) || 0,
-                isAudio,
-                platform,
-                tier
-              );
-              return;
-            }
-          } catch (refreshErr) {
-            stopDownloadAnimTimers();
-            showFileDownloadOverlay(false);
-            trackAnalytics('download_fail', {
-              platform: platform,
-              tier: tier,
-              message: ('Refresh failed: ' + (refreshErr.message || 'unknown')).slice(0, 300)
-            });
-            showToast('Could not refresh link — try Download again or open the direct link.', 'error');
-            return;
-          }
-        }
+      showFileDownloadOverlay(true, isAudio ? 'Saving MP3…' : 'Saving video…', 'Starting download…', 10, 'downloading');
 
-        if (isRetryableDownloadError(err) && !btn.getAttribute('data-retry-used')) {
-          btn.setAttribute('data-retry-used', '1');
-          try {
-            showFileDownloadOverlay(true, isAudio ? 'Saving MP3…' : 'Saving video…', 'Trying once more…', 10, 'downloading');
-            await sleep(3000);
-            await downloadWithFastAutoSave(mediaUrl, filename, expectedBytes, isAudio, platform, tier);
-            btn.removeAttribute('data-retry-used');
-            return;
-          } catch (retryErr) {
-            btn.removeAttribute('data-retry-used');
-            err = retryErr;
-          }
-        }
-
-        stopDownloadAnimTimers();
-        showFileDownloadOverlay(false);
-        var errMsg = (err && err.message) ? String(err.message) : '';
-        trackAnalytics('download_fail', {
-          platform: platform,
-          tier: tier,
-          message: (errMsg || 'Download failed').slice(0, 300)
-        });
-        showToast(errMsg && errMsg.length < 120 ? errMsg : 'Download failed — try again or pick another quality.', 'error');
+      var streamOpts = {};
+      if (isAudio && isVideoPageUrl(mediaUrl)) {
+        streamOpts.ytdlpFallback = true;
+      } else if (!isDirectMediaUrl(mediaUrl)) {
+        streamOpts.ytdlpFallback = true;
       }
+      var streamUrl = buildStreamUrl(mediaUrl, filename, expectedBytes, platform, isAudio, null, streamOpts);
+      triggerNativeStreamDownload(streamUrl, filename);
+      finishDownloadSuccess(isAudio, platform, tier);
     }
 
     function initDownloadButtons() {
@@ -4420,8 +4351,8 @@
           handleMediaDownload(e, videoBtn);
           return;
         }
-        var btn = e.target.closest('.btn-download-tier, .btn-download-audio');
-        if (btn) handleMediaDownload(e, btn);
+        var btn = e.target.closest('.btn-download-tier, .btn-download-audio, .btn-download');
+        if (btn && btn.getAttribute('data-media-url')) handleMediaDownload(e, btn);
       });
     }
 
@@ -4560,13 +4491,10 @@
       if (!blob || !blob.size) {
         throw new Error('Empty file received — link may have expired. Fetch the video again.');
       }
-      if (/text\/html/i.test(contentType || '')) {
+      if (/text\/html|application\/json/i.test(contentType || '')) {
         throw new Error('Server returned a page instead of a file — try again.');
       }
-      var minSize = isAudio ? 1024 : 4096;
-      if (expectedBytes > 65536 && blob.size < expectedBytes * 0.05) {
-        throw new Error('File too small — download may have failed. Try again.');
-      }
+      var minSize = isAudio ? 512 : 2048;
       if (blob.size < minSize) {
         throw new Error('File too small — try again.');
       }
@@ -4584,8 +4512,8 @@
             if (options.prepareUi !== false) {
               startPrepareProgress(options.isAudio, 'Retrying download…');
             }
-            setDownloadProgress(null, 'Retrying…', 'Attempt ' + (attempt + 1) + ' of ' + maxAttempts, options.prepareUi === false ? 'downloading' : 'preparing');
-            await sleep(2000 * attempt);
+            setDownloadProgress(5, 'Retrying…', 'Attempt ' + (attempt + 1) + ' of ' + maxAttempts, options.prepareUi === false ? 'downloading' : 'preparing');
+            await sleep(1000 * attempt);
           }
 
           var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -4643,7 +4571,7 @@
           lastErr = err;
           if (err && err.retryAfter && attempt < maxAttempts - 1) {
             startPrepareProgress(options.isAudio, 'Server busy…');
-            setDownloadProgress(null, 'Server busy…', 'Retry in ' + err.retryAfter + 's', 'preparing');
+            setDownloadProgress(5, 'Server busy…', 'Retry in ' + err.retryAfter + 's', 'preparing');
             await sleep(err.retryAfter * 1000);
             continue;
           }
@@ -4681,9 +4609,16 @@
         return videoData;
       }
 
-      setLoaderMessage(platform, options.fromCache ? 'Loading file sizes…' : 'Probing real file sizes…');
-      setLoaderProgress(platform, options.fromCache ? 82 : 72);
-      videoData = await enrichVideoDataWithRealSizes(videoData);
+      var needsSizeProbe = (videoData.videoVariants || []).some(function (v) {
+        return v.url && !v.sizeExact && (!v.sizeBytes || v.sizeBytes <= 0);
+      });
+      if (needsSizeProbe) {
+        setLoaderMessage(platform, 'Checking file sizes…');
+        setLoaderProgress(platform, 78);
+        videoData = await enrichVideoDataWithRealSizes(videoData);
+      } else {
+        videoData = assignVideoTiers(videoData);
+      }
 
       setLoaderProgress(platform, 100);
       hideLoader(platform);
@@ -4880,7 +4815,16 @@
               'API not found (404). Do not use Netlify Drop — run DEPLOY-NETLIFY.bat or connect GitHub. See NETLIFY_DEPLOY.md.'
             );
           }
-          throw new Error('Server misconfiguration — download API route not found. Redeploy the Omni website on Netlify.');
+          if (response.status === 502) {
+            throw new Error('Download server error (502) — stream relay failed. Try again in a moment.');
+          }
+          if (response.status === 503) {
+            throw new Error('Server busy — please wait a moment and try again.');
+          }
+          if (response.status === 504) {
+            throw new Error('Server took too long — please try again.');
+          }
+          throw new Error('Server error (HTTP ' + response.status + ') — try again shortly.');
         }
         throw new Error('Invalid response from server');
       }

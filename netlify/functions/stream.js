@@ -9,6 +9,14 @@ const { isVideoPageUrl } = require('./lib/ytdlp-runner');
 const { corsHeaders, jsonResponse, emptyResponse, queryParam } = require('./lib/http');
 const { incrementDownloadCount } = require('./lib/stats-store');
 
+function isServerlessRuntime() {
+  return Boolean(
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.NETLIFY ||
+    process.env.VERCEL
+  );
+}
+
 async function relayCdnStream(mediaUrl, filename, expectedSize) {
   const upstreamReqHeaders = upstreamHeaders(mediaUrl);
   let upstream = await fetch(mediaUrl, { headers: upstreamReqHeaders, redirect: 'follow' });
@@ -39,11 +47,8 @@ async function relayCdnStream(mediaUrl, filename, expectedSize) {
     responseHeaders['Content-Length'] = String(expectedSize);
   }
 
-  if (typeof Response !== 'undefined' && upstream.body) {
-    return new Response(upstream.body, { status: 200, headers: responseHeaders });
-  }
-
   const buffer = Buffer.from(await upstream.arrayBuffer());
+  if (!buffer.length) return null;
   return {
     statusCode: 200,
     headers: responseHeaders,
@@ -141,7 +146,7 @@ exports.handler = async (event) => {
       if (!hasExternalBackend()) return null;
       try {
         const upstream = await fetchExternalStream(Object.assign({
-          url: mediaUrl,
+          url: (extra && extra.ytdlp) ? (pageUrl || mediaUrl) : mediaUrl,
           name: filename,
           size: expectedSize > 0 ? String(expectedSize) : '',
           page_url: pageUrl || '',
@@ -159,10 +164,8 @@ exports.handler = async (event) => {
         const contentLength = upstream.headers.get('content-length');
         if (contentLength) responseHeaders['Content-Length'] = contentLength;
         else if (expectedSize > 0) responseHeaders['Content-Length'] = String(expectedSize);
-        if (typeof Response !== 'undefined' && upstream.body) {
-          return new Response(upstream.body, { status: 200, headers: responseHeaders });
-        }
         const buffer = Buffer.from(await upstream.arrayBuffer());
+        if (!buffer.length) return null;
         return {
           statusCode: 200,
           headers: responseHeaders,
@@ -183,22 +186,26 @@ exports.handler = async (event) => {
     }
 
     if (forceYtdlp && ytdlpSource) {
-      const extYtdlp = await relayExternalResponse({ ytdlp: '1' });
+      const extYtdlp = await relayExternalResponse({ ytdlp: '1', audio: isAudio ? '1' : '' });
       if (extYtdlp) return extYtdlp;
-      try {
-        return await relayYtdlpStream(ytdlpSource, filename, isAudio);
-      } catch (ytdlpErr) {
-        console.warn('[stream] local yt-dlp failed:', ytdlpErr.message);
+      if (!isServerlessRuntime()) {
+        try {
+          return await relayYtdlpStream(ytdlpSource, filename, isAudio);
+        } catch (ytdlpErr) {
+          console.warn('[stream] local yt-dlp failed:', ytdlpErr.message);
+        }
       }
     }
 
     if (ytdlpSource) {
-      const extYtdlp = await relayExternalResponse({ ytdlp: '1' });
+      const extYtdlp = await relayExternalResponse({ ytdlp: '1', audio: isAudio ? '1' : '' });
       if (extYtdlp) return extYtdlp;
-      try {
-        return await relayYtdlpStream(ytdlpSource, filename, isAudio);
-      } catch (ytdlpErr) {
-        console.warn('[stream] yt-dlp fallback failed:', ytdlpErr.message);
+      if (!isServerlessRuntime()) {
+        try {
+          return await relayYtdlpStream(ytdlpSource, filename, isAudio);
+        } catch (ytdlpErr) {
+          console.warn('[stream] yt-dlp fallback failed:', ytdlpErr.message);
+        }
       }
     }
 
@@ -213,7 +220,10 @@ exports.handler = async (event) => {
       });
     }
 
-    return jsonResponse(502, { error: 'No stream source available' });
+    return jsonResponse(502, {
+      error: 'Stream relay failed',
+      message: 'Could not download this file — try again or pick another quality.',
+    });
   } catch (err) {
     console.error('[stream] error:', err.message);
     return jsonResponse(502, { error: 'Stream error: ' + err.message });

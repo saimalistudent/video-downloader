@@ -7,17 +7,26 @@ const REDIS_SLOT_POLL_MS = parseInt(process.env.YT_DLP_SLOT_POLL_MS || '80', 10)
 
 let running = 0;
 const waiters = [];
+let redisSlotsDisabled = false;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function getSharedRedis() {
+  if (redisSlotsDisabled) return false;
   try {
     const { getRedis } = require('./link-cache');
     return getRedis();
   } catch (err) {
     return false;
+  }
+}
+
+function disableRedisSlots(reason) {
+  if (!redisSlotsDisabled) {
+    redisSlotsDisabled = true;
+    console.warn('[download-queue] Redis slots disabled:', reason || 'unknown');
   }
 }
 
@@ -79,20 +88,29 @@ async function withRedisDownloadSlot(fn) {
   const slotKey = 'omni:dl:slots';
   const deadline = Date.now() + QUEUE_TIMEOUT_MS;
 
-  while (Date.now() < deadline) {
-    const active = await redis.incr(slotKey);
-    if (active === 1) await redis.expire(slotKey, 600);
+  try {
+    while (Date.now() < deadline) {
+      const active = await redis.incr(slotKey);
+      if (active === 1) await redis.expire(slotKey, 600);
 
-    if (active <= MAX_CONCURRENT) {
-      try {
-        return await fn();
-      } finally {
-        await redis.decr(slotKey);
+      if (active <= MAX_CONCURRENT) {
+        try {
+          return await fn();
+        } finally {
+          try {
+            await redis.decr(slotKey);
+          } catch (decErr) {
+            disableRedisSlots(decErr.message);
+          }
+        }
       }
-    }
 
-    await redis.decr(slotKey);
-    await sleep(REDIS_SLOT_POLL_MS);
+      await redis.decr(slotKey);
+      await sleep(REDIS_SLOT_POLL_MS);
+    }
+  } catch (err) {
+    disableRedisSlots(err.message);
+    return withLocalDownloadSlot(fn);
   }
 
   const err = new Error('Server is busy — many people are downloading right now. Please try again in a moment.');
@@ -113,7 +131,7 @@ function getQueueStats() {
     waiting: waiters.length,
     maxConcurrent: MAX_CONCURRENT,
     maxWaiting: MAX_WAITING,
-    distributed: Boolean(getSharedRedis()),
+    distributed: Boolean(getSharedRedis()) && !redisSlotsDisabled,
     targetRps: parseInt(process.env.TARGET_REQUESTS_PER_SEC || '5', 10),
   };
 }
