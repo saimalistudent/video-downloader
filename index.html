@@ -2155,8 +2155,8 @@
                     <circle cx="32" cy="32" r="17" class="omni-loader-ring" stroke="url(#loaderGradAll)" stroke-dasharray="96 14" transform="rotate(-90 32 32)"/>
                   </svg>
                 </div>
-                <p class="omni-loader-title">Processing your video</p>
-                <p class="omni-loader-text">Preparing your HD download…</p>
+                <p class="omni-loader-title">Getting download link</p>
+                <p class="omni-loader-text">Not downloading yet — just fetching the CDN URL…</p>
               </div>
             </div>
           </div>
@@ -2287,8 +2287,8 @@
                     <circle cx="32" cy="32" r="17" class="omni-loader-ring" stroke="url(#loaderGradTiktok)" stroke-dasharray="96 14" transform="rotate(-90 32 32)"/>
                   </svg>
                 </div>
-                <p class="omni-loader-title">Fetching TikTok video</p>
-                <p class="omni-loader-text">Checking for no-watermark HD…</p>
+                <p class="omni-loader-title">Getting TikTok link</p>
+                <p class="omni-loader-text">CDN link only — tap Download to save the file</p>
               </div>
             </div>
           </div>
@@ -2393,8 +2393,8 @@
                     <circle cx="32" cy="32" r="17" class="omni-loader-ring" stroke="url(#loaderGradInsta)" stroke-dasharray="96 14" transform="rotate(-90 32 32)"/>
                   </svg>
                 </div>
-                <p class="omni-loader-title">Fetching Instagram Reel</p>
-                <p class="omni-loader-text">Almost ready…</p>
+                <p class="omni-loader-title">Getting Instagram link</p>
+                <p class="omni-loader-text">CDN link only — tap Download to save the file</p>
               </div>
             </div>
           </div>
@@ -2499,8 +2499,8 @@
                     <circle cx="32" cy="32" r="17" class="omni-loader-ring" stroke="url(#loaderGradFb)" stroke-dasharray="96 14" transform="rotate(-90 32 32)"/>
                   </svg>
                 </div>
-                <p class="omni-loader-title">Fetching your video</p>
-                <p class="omni-loader-text">Connecting to source…</p>
+                <p class="omni-loader-title">Getting video link</p>
+                <p class="omni-loader-text">CDN link only — tap Download to save the file</p>
               </div>
             </div>
           </div>
@@ -3364,7 +3364,7 @@
       document.getElementById('result-' + platform).classList.add('hidden');
       stopLoaderStages(platform);
       setLoaderProgress(platform, 12);
-      setLoaderMessage(platform, 'Fetching video info…');
+      setLoaderMessage(platform, 'Getting CDN link…');
     }
 
     function hideLoader(platform) {
@@ -4320,7 +4320,7 @@
         message: isAudio ? 'MP3 download started' : 'Video download started'
       });
 
-      showFileDownloadOverlay(true, isAudio ? 'Saving MP3…' : 'Saving video…', 'Starting download…', 10, 'downloading');
+      showFileDownloadOverlay(true, isAudio ? 'Saving MP3…' : 'Downloading video file…', 'Saving to your device — this may take a while for large files', 10, 'downloading');
 
       var streamOpts = {};
       if (isAudio && isVideoPageUrl(mediaUrl)) {
@@ -4609,16 +4609,7 @@
         return videoData;
       }
 
-      var needsSizeProbe = (videoData.videoVariants || []).some(function (v) {
-        return v.url && !v.sizeExact && (!v.sizeBytes || v.sizeBytes <= 0);
-      });
-      if (needsSizeProbe) {
-        setLoaderMessage(platform, 'Checking file sizes…');
-        setLoaderProgress(platform, 78);
-        videoData = await enrichVideoDataWithRealSizes(videoData);
-      } else {
-        videoData = assignVideoTiers(videoData);
-      }
+      videoData = assignVideoTiers(videoData);
 
       setLoaderProgress(platform, 100);
       hideLoader(platform);
@@ -4977,13 +4968,12 @@
           return;
         }
 
-        setLoaderMessage(platform, 'Fetching video info…');
-        setLoaderProgress(platform, 28);
+        setLoaderMessage(platform, 'Getting CDN link…');
+        setLoaderProgress(platform, 30);
         var result = await fetchVideoFromApi(url, { platform: platform });
         var data = result.data;
 
-        setLoaderMessage(platform, 'Parsing video details…');
-        setLoaderProgress(platform, 48);
+        setLoaderProgress(platform, 90);
         setSessionFetchCache(url, data);
 
         await processFetchedApiData(platform, url, data, { inputId: inputId });

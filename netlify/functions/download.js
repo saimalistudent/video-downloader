@@ -2,8 +2,7 @@ const {
   ensureApiKey,
   normalizeVideoUrl,
 } = require('./lib/api-proxy');
-const { clientIpFromRequest } = require('./lib/link-cache');
-const { getLookupQueue } = require('./lib/lookup-queue');
+const { clientIpFromRequest, fetchMetadataDirect } = require('./lib/link-cache');
 const throughputConfig = require('./lib/throughput-config');
 const { jsonResponse, emptyResponse, parseJsonBody, queryParam } = require('./lib/http');
 
@@ -61,8 +60,7 @@ exports.handler = async (event) => {
       priority = Math.max(priority, throughputConfig.PRIORITY.RETURNING);
     }
 
-    const queue = getLookupQueue();
-    const result = await queue.submit(videoUrl, { refresh, clientIp, priority });
+    const result = await fetchMetadataDirect(videoUrl, { refresh, clientIp, priority });
 
     if (!result.immediate) {
       return {

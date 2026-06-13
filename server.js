@@ -23,7 +23,7 @@ const {
 } = require('./lib/api-proxy');
 const { isVideoPageUrl, downloadYtdlpToFile } = require('./lib/ytdlp-runner');
 const { withDownloadSlot, getQueueStats } = require('./lib/download-queue');
-const { clientIpFromRequest } = require('./lib/link-cache');
+const { clientIpFromRequest, fetchMetadataDirect } = require('./lib/link-cache');
 const { getLookupQueue } = require('./lib/lookup-queue');
 const throughputConfig = require('./lib/throughput-config');
 const { verifyLogin, authFromEvent } = require('./lib/admin-auth');
@@ -238,8 +238,7 @@ async function handleDownload(req, res) {
     }
 
     const started = Date.now();
-    const queue = getLookupQueue();
-    const result = await queue.submit(videoUrl, { refresh, clientIp, priority });
+    const result = await fetchMetadataDirect(videoUrl, { refresh, clientIp, priority });
     const durationMs = Date.now() - started;
 
     if (!result.immediate) {
