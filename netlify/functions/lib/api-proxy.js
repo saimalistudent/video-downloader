@@ -221,7 +221,7 @@ async function rapidapiDownload(videoUrl) {
   }
 }
 
-async function proxyDownload(videoUrl, retries = 2) {
+async function proxyDownload(videoUrl, retries = 3) {
   let lastStatus = 502;
   let lastData = { error: 'Download failed' };
   let lastRateLimit = null;

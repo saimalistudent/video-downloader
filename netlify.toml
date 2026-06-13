@@ -43,6 +43,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/queue/status"
+  to = "/.netlify/functions/queue"
+  status = 200
+
+[[redirects]]
   from = "/api/stats"
   to = "/.netlify/functions/stats"
   status = 200

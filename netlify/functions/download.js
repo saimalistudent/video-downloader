@@ -3,10 +3,12 @@ const {
   getApiKey,
   normalizeVideoUrl,
 } = require('./lib/api-proxy');
-const { resolveDownloadWithCache, clientIpFromRequest } = require('./lib/link-cache');
+const { clientIpFromRequest } = require('./lib/link-cache');
+const { getLookupQueue } = require('./lib/lookup-queue');
+const throughputConfig = require('./lib/throughput-config');
 const { jsonResponse, emptyResponse, parseJsonBody, queryParam } = require('./lib/http');
 
-exports.handler = async (event, context) => {
+exports.handler = async (event) => {
   const method = String(event.httpMethod || 'GET').toUpperCase();
 
   try {
@@ -15,7 +17,7 @@ exports.handler = async (event, context) => {
     }
 
     if (method !== 'POST' && method !== 'GET') {
-      return jsonResponse(405, { error: 'Method not allowed', message: `Unsupported method: ${method}` });
+      return jsonResponse(405, { error: 'Method not allowed', message: 'Unsupported method: ' + method });
     }
 
     let videoUrl = '';
@@ -50,25 +52,48 @@ exports.handler = async (event, context) => {
 
     const keyCheck = ensureApiKey();
     if (!keyCheck.ok) {
-      console.error('[download] DOWNLOAD_API_KEY missing — set in Netlify env vars and redeploy');
       return jsonResponse(500, keyCheck.error);
     }
 
+    const hdr = event.headers || {};
     const clientIp = clientIpFromRequest(event);
-    console.log('[download] fetch', refresh ? 'refresh' : 'lookup', 'key length:', getApiKey().length);
+    let priority = parseInt(String(hdr['x-omni-priority'] || hdr['X-Omni-Priority'] || '0'), 10) || 0;
+    if (/omni_return=1/i.test(String(hdr.cookie || hdr.Cookie || ''))) {
+      priority = Math.max(priority, throughputConfig.PRIORITY.RETURNING);
+    }
 
-    const result = await resolveDownloadWithCache(videoUrl, { refresh, clientIp });
+    const queue = getLookupQueue();
+    const result = await queue.submit(videoUrl, { refresh, clientIp, priority });
+
+    if (!result.immediate) {
+      return {
+        statusCode: 202,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'X-Omni-Queue': 'WAIT',
+        },
+        body: JSON.stringify({
+          queued: true,
+          job_id: result.job_id,
+          position: result.position,
+          estimated_wait_sec: result.estimated_wait_sec,
+          message: result.message,
+          overflow: result.overflow,
+          poll_url: '/api/queue/status?job_id=' + result.job_id,
+        }),
+      };
+    }
 
     if (!result.fromCache) {
       try {
         const { trackApiCall } = require('./lib/admin-track');
         await trackApiCall({
           platform: 'api',
-          success: result.status >= 200 && result.status < 400 && result.data && !result.data.error,
-          status: result.status,
-          duration_ms: result.durationMs || 0,
-          rateLimit: result.rateLimit,
-          message: result.status >= 400 ? 'Download API error ' + result.status : 'Download API metadata fetch',
+          success: (result.status || 200) >= 200 && (result.status || 200) < 400 && result.data && !result.data.error,
+          status: result.status || 200,
+          duration_ms: 0,
+          message: (result.status || 200) >= 400 ? 'Download API error' : 'Download API metadata fetch',
         });
       } catch (trackErr) {
         console.warn('[download] admin track skipped:', trackErr.message);
@@ -76,43 +101,26 @@ exports.handler = async (event, context) => {
     }
 
     const cacheHeader = result.fromCache ? 'HIT' : (refresh ? 'REFRESH' : 'MISS');
+    const data = result.data;
 
-    if (!result.data || (typeof result.data === 'object' && !Object.keys(result.data).length)) {
-      return {
-        statusCode: result.status || 502,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-          'X-Omni-Cache': cacheHeader,
-        },
-        body: JSON.stringify({
-          error: 'Empty download API result',
-          message: 'Download API returned no usable data for this URL.',
-          http_status: result.status,
-        }),
-      };
+    if (!data || (typeof data === 'object' && !Object.keys(data).length)) {
+      return jsonResponse(result.status || 502, {
+        error: 'Empty download API result',
+        message: 'Download API returned no usable data for this URL.',
+      });
     }
 
     return {
-      statusCode: result.status,
+      statusCode: result.status || 200,
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
         'X-Omni-Cache': cacheHeader,
       },
-      body: JSON.stringify(result.data),
+      body: JSON.stringify(data),
     };
   } catch (err) {
-    console.error('[download] error:', err);
-    try {
-      const { trackApiCall } = require('./lib/admin-track');
-      await trackApiCall({
-        platform: 'api',
-        success: false,
-        status: 502,
-        message: err.message || 'Download proxy failed',
-      });
-    } catch (trackErr) { /* skip */ }
+    console.error('[download] error:', err.message);
     return jsonResponse(502, {
       error: 'Download proxy failed',
       message: err.message || String(err),

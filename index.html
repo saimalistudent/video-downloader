@@ -2618,6 +2618,23 @@
 
   </div><!-- /.page -->
 
+  <!-- Lookup queue overlay (high traffic) -->
+  <div id="lookup-queue-overlay" class="queue-modal hidden" role="dialog" aria-modal="true" aria-live="polite">
+    <div class="queue-backdrop"></div>
+    <div class="queue-box">
+      <div class="queue-ring" aria-hidden="true"></div>
+      <p class="queue-title" id="lookup-queue-title">In queue…</p>
+      <p class="queue-text" id="lookup-queue-text">You are #1 in line</p>
+      <div class="dl-progress-wrap" style="margin-top:1rem">
+        <div class="dl-progress-track">
+          <div class="omni-loader-bar-fill active" id="lookup-queue-bar" style="width:8%"></div>
+        </div>
+      </div>
+      <p class="queue-sub" id="lookup-queue-eta">Estimated wait: ~45 sec</p>
+      <p class="queue-sub" style="margin-top:.5rem;opacity:.75">Please keep this tab open — we will fetch automatically.</p>
+    </div>
+  </div>
+
   <!-- Admin / creator blocked modal -->
   <div id="file-download-overlay" class="file-download-overlay hidden" role="dialog" aria-modal="true" aria-live="polite">
     <div class="queue-backdrop"></div>
@@ -2736,6 +2753,7 @@
       download: '/api/download',
       stream: '/api/stream',
       size: '/api/size',
+      queueStatus: '/api/queue/status',
       collect: '/api/admin/collect'
     };
     var API_TOKEN = '';
@@ -2747,6 +2765,7 @@
       API.download = (root || '') + '/api/download';
       API.stream = '/api/stream';
       API.size = (root || '') + '/api/size';
+      API.queueStatus = (root || '') + '/api/queue/status';
       API.collect = (root || '') + '/api/admin/collect';
     }
 
@@ -2861,6 +2880,7 @@
         API.download = '/.netlify/functions/download';
         API.stream = '/.netlify/functions/stream';
         API.size = '/.netlify/functions/size';
+        API.queueStatus = '/api/queue/status';
         if (banner) banner.classList.add('hidden');
         console.info('[Omni] Netlify functions backend');
         return true;
@@ -3159,7 +3179,8 @@
     var downloadAnimTimer = null;
     var downloadStageTimers = [];
     var downloadQueue = [];
-    var downloadQueueActive = false;
+    var downloadQueueActive = 0;
+    var USER_DOWNLOAD_CONCURRENCY = 3;
 
     function stopDownloadAnimTimers() {
       if (downloadAnimTimer) {
@@ -3244,12 +3265,12 @@
     function enqueueUserDownload(jobFn) {
       return new Promise(function (resolve, reject) {
         downloadQueue.push({ fn: jobFn, resolve: resolve, reject: reject });
-        var position = downloadQueue.length + (downloadQueueActive ? 1 : 0);
-        if (position > 1) {
+        var position = downloadQueue.length + downloadQueueActive;
+        if (position > USER_DOWNLOAD_CONCURRENCY) {
           showFileDownloadOverlay(
             true,
             'In queue…',
-            'Position ' + position + ' — downloads run one at a time for stability',
+            'Position ' + position + ' — up to ' + USER_DOWNLOAD_CONCURRENCY + ' downloads at once',
             null,
             'queued'
           );
@@ -3259,16 +3280,17 @@
     }
 
     function pumpDownloadQueue() {
-      if (downloadQueueActive || !downloadQueue.length) return;
-      downloadQueueActive = true;
-      var job = downloadQueue.shift();
-      Promise.resolve()
-        .then(function () { return job.fn(); })
-        .then(job.resolve, job.reject)
-        .finally(function () {
-          downloadQueueActive = false;
-          pumpDownloadQueue();
-        });
+      while (downloadQueueActive < USER_DOWNLOAD_CONCURRENCY && downloadQueue.length) {
+        downloadQueueActive += 1;
+        var job = downloadQueue.shift();
+        Promise.resolve()
+          .then(function () { return job.fn(); })
+          .then(job.resolve, job.reject)
+          .finally(function () {
+            downloadQueueActive -= 1;
+            pumpDownloadQueue();
+          });
+      }
     }
 
     function showFileDownloadOverlay(show, title, text, progress, state) {
@@ -3926,19 +3948,26 @@
       return isLiteMode() ? 550 : 320;
     }
 
-    function buildStreamUrl(mediaUrl, filename, sizeBytes, platform, isAudio, streamBaseOverride) {
+    function buildStreamUrl(mediaUrl, filename, sizeBytes, platform, isAudio, streamBaseOverride, options) {
+      options = options || {};
       var ctx = lastFetchContext[platform || 'all'];
       var pageUrl = (ctx && ctx.url) || '';
-      var target = pageUrl || mediaUrl;
+      var useYtdlp = options.ytdlpFallback === true;
+      var target = useYtdlp ? (pageUrl || mediaUrl) : (mediaUrl || pageUrl);
       if (!target) return '#';
       var base = streamBaseOverride || API.stream || '/api/stream';
       var name = encodeURIComponent(filename || (isAudio ? 'audio.mp3' : 'video.mp4'));
       var url = base + '?url=' + encodeURIComponent(target) + '&name=' + name;
       if (sizeBytes > 0) url += '&size=' + sizeBytes;
-      if (pageUrl) url += '&page_url=' + encodeURIComponent(pageUrl);
+      if (useYtdlp && pageUrl) url += '&page_url=' + encodeURIComponent(pageUrl);
+      if (useYtdlp) url += '&ytdlp=1';
       if (isAudio) url += '&audio=1';
       if (streamBaseOverride && API_TOKEN) url += '&token=' + encodeURIComponent(API_TOKEN);
       return url;
+    }
+
+    function isDirectMediaUrl(url) {
+      return Boolean(url && /^https?:\/\//i.test(url) && !isVideoPageUrl(url));
     }
 
     function isVideoPageUrl(url) {
@@ -4174,27 +4203,44 @@
           }
         }
       } catch (directErr) {
-        /* CORS blocked — use server yt-dlp relay */
+        /* CORS blocked — use server relay */
+      }
+
+      await apiInitPromise;
+
+      async function streamToFile(streamUrl, options) {
+        options = options || {};
+        var response = await fetchStreamWithRetry(streamUrl, {
+          platform: platform,
+          tier: tier,
+          isAudio: isAudio,
+          maxAttempts: options.maxAttempts || 2,
+          timeoutMs: options.timeoutMs || 120000,
+          prepareUi: options.prepareUi !== false
+        });
+        if (response && response.blocked) return 'blocked';
+        var streamType = response.headers.get('content-type') || '';
+        var blob = await readStreamToBlob(response, { expectedBytes: expectedBytes });
+        validateDownloadBlob(blob, streamType, expectedBytes, isAudio);
+        saveBlobAsFile(blob, filename);
+        finishDownloadSuccess(isAudio, platform, tier);
+        return true;
+      }
+
+      if (isDirectMediaUrl(mediaUrl)) {
+        setDownloadProgress(null, 'Downloading…', 'Fast relay — direct link…', 'downloading');
+        try {
+          var fastUrl = buildStreamUrl(mediaUrl, filename, expectedBytes, platform, isAudio);
+          var fastResult = await streamToFile(fastUrl, { maxAttempts: 2, timeoutMs: 90000, prepareUi: false });
+          if (fastResult === true || fastResult === 'blocked') return;
+        } catch (fastErr) {
+          console.warn('Fast CDN relay failed, trying yt-dlp:', fastErr);
+        }
       }
 
       startPrepareProgress(isAudio, isAudio ? 'Preparing MP3…' : 'Preparing video…');
-      await apiInitPromise;
-      var streamUrl = buildStreamUrl(mediaUrl, filename, expectedBytes, platform, isAudio);
-      var response = await fetchStreamWithRetry(streamUrl, {
-        platform: platform,
-        tier: tier,
-        isAudio: isAudio,
-        maxAttempts: 4,
-        timeoutMs: 180000
-      });
-      if (response && response.blocked) return;
-
-      var streamType = response.headers.get('content-type') || '';
-      var blob = await readStreamToBlob(response, { expectedBytes: expectedBytes });
-      validateDownloadBlob(blob, streamType, expectedBytes, isAudio);
-
-      saveBlobAsFile(blob, filename);
-      finishDownloadSuccess(isAudio, platform, tier);
+      var slowUrl = buildStreamUrl(mediaUrl, filename, expectedBytes, platform, isAudio, null, { ytdlpFallback: true });
+      await streamToFile(slowUrl, { maxAttempts: 3, timeoutMs: 180000, prepareUi: true });
     }
 
     async function handleMediaDownload(e, btn) {
@@ -4465,8 +4511,10 @@
       for (var attempt = 0; attempt < maxAttempts; attempt += 1) {
         try {
           if (attempt > 0) {
-            startPrepareProgress(options.isAudio, 'Retrying download…');
-            setDownloadProgress(null, 'Retrying…', 'Attempt ' + (attempt + 1) + ' of ' + maxAttempts, 'preparing');
+            if (options.prepareUi !== false) {
+              startPrepareProgress(options.isAudio, 'Retrying download…');
+            }
+            setDownloadProgress(null, 'Retrying…', 'Attempt ' + (attempt + 1) + ' of ' + maxAttempts, options.prepareUi === false ? 'downloading' : 'preparing');
             await sleep(2000 * attempt);
           }
 
@@ -4592,6 +4640,95 @@
       return videoData;
     }
 
+    var LOOKUP_POLL_MS = 2000;
+    var lookupPollTimer = null;
+
+    function markReturningUser() {
+      try {
+        document.cookie = 'omni_return=1; path=/; max-age=2592000; SameSite=Lax';
+      } catch (e) { /* ignore */ }
+    }
+
+    function getLookupPriority() {
+      if (/omni_return=1/i.test(document.cookie || '')) return 2;
+      return 0;
+    }
+
+    function showLookupQueueOverlay(position, waitSec, message) {
+      var overlay = document.getElementById('lookup-queue-overlay');
+      if (!overlay) return;
+      updateLookupQueueOverlay({
+        position: position || 1,
+        estimated_wait_sec: waitSec || 30,
+        progress: 8,
+        message: message || ('You are #' + (position || 1) + ' in line'),
+        status: 'queued'
+      });
+      overlay.classList.remove('hidden');
+      requestAnimationFrame(function () { overlay.classList.add('show'); });
+    }
+
+    function updateLookupQueueOverlay(status) {
+      var title = document.getElementById('lookup-queue-title');
+      var text = document.getElementById('lookup-queue-text');
+      var bar = document.getElementById('lookup-queue-bar');
+      var eta = document.getElementById('lookup-queue-eta');
+      if (status.status === 'processing') {
+        if (title) title.textContent = 'Processing your link…';
+        if (text) text.textContent = 'Almost ready — hang tight';
+      } else if (status.status === 'done') {
+        if (title) title.textContent = 'Ready!';
+        if (text) text.textContent = 'Loading your video…';
+      } else {
+        if (title) title.textContent = 'In queue…';
+        if (text) text.textContent = status.message || ('You are #' + (status.position || '?') + ' in line');
+      }
+      if (bar) bar.style.width = Math.min(100, Math.max(5, status.progress || 8)) + '%';
+      if (eta) {
+        if (status.status === 'processing') {
+          eta.textContent = 'Fetching video info…';
+        } else if (status.status === 'done') {
+          eta.textContent = 'Done!';
+        } else {
+          eta.textContent = 'Estimated wait: ~' + (status.estimated_wait_sec || 30) + ' sec';
+        }
+      }
+    }
+
+    function hideLookupQueueOverlay() {
+      var overlay = document.getElementById('lookup-queue-overlay');
+      if (!overlay) return;
+      overlay.classList.remove('show');
+      setTimeout(function () { overlay.classList.add('hidden'); }, 350);
+    }
+
+    async function pollLookupJob(initial) {
+      showLookupQueueOverlay(initial.position, initial.estimated_wait_sec, initial.message);
+      var jobId = initial.job_id;
+      var pollUrl = (API.queueStatus || '/api/queue/status') + '?job_id=' + encodeURIComponent(jobId);
+
+      while (true) {
+        var statusRes = await fetch(pollUrl, { cache: 'no-store' });
+        var status = await parseJsonResponse(statusRes);
+        updateLookupQueueOverlay(status);
+
+        if (status.status === 'done' && status.result && status.result.data) {
+          hideLookupQueueOverlay();
+          markReturningUser();
+          return { data: status.result.data };
+        }
+        if (status.status === 'failed') {
+          hideLookupQueueOverlay();
+          throw new Error(extractApiError(status.error));
+        }
+        if (status.status === 'not_found') {
+          hideLookupQueueOverlay();
+          throw new Error('Queue job expired — please try again.');
+        }
+        await sleep(LOOKUP_POLL_MS);
+      }
+    }
+
     /* ============================================================
        Proxy fetch — All-in-One API via local server
        ============================================================ */
@@ -4599,6 +4736,7 @@
       options = options || {};
       var headers = apiAuthHeaders();
       if (options.refresh) headers['X-Omni-Refresh'] = '1';
+      headers['X-Omni-Priority'] = String(getLookupPriority());
       return fetch(API.download, {
         method: 'POST',
         headers: headers,
@@ -4672,8 +4810,18 @@
         var response = await callAllInOneApi(videoUrl, options);
         var data = await parseJsonResponse(response);
 
+        if (response.status === 202 && data && data.job_id) {
+          return await pollLookupJob(data);
+        }
+
         if (response.status === 429) {
-          throw new Error((data && data.message) || 'Too many requests — please wait a minute and try again.');
+          var retrySec = parseInt((data && data.retryAfter) || '0', 10) || 0;
+          if (retrySec > 0 && retrySec <= 5 && retryCount < maxRetries) {
+            retryCount++;
+            await sleep(retrySec * 1000);
+            continue;
+          }
+          throw new Error((data && data.message) || 'Too many requests — please wait a moment and try again.');
         }
 
         if (response.ok && data.success !== false && data.error !== true) {
@@ -4785,6 +4933,7 @@
 
         await processFetchedApiData(platform, url, data, { inputId: inputId });
         hideLoader(platform);
+        markReturningUser();
         showToast('Your video is ready — choose your download option below.', 'success');
         trackAnalytics('fetch_success', {
           platform: platform,

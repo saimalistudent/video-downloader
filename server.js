@@ -21,7 +21,9 @@ const {
 } = require('./lib/api-proxy');
 const { isVideoPageUrl, downloadYtdlpToFile } = require('./lib/ytdlp-runner');
 const { withDownloadSlot, getQueueStats } = require('./lib/download-queue');
-const { resolveDownloadWithCache, clientIpFromRequest } = require('./lib/link-cache');
+const { clientIpFromRequest } = require('./lib/link-cache');
+const { getLookupQueue } = require('./lib/lookup-queue');
+const throughputConfig = require('./lib/throughput-config');
 const { verifyLogin, authFromEvent } = require('./lib/admin-auth');
 const { getDashboardStats, updatePlanLimit } = require('./lib/admin-db');
 const {
@@ -98,6 +100,42 @@ app.get('/api/health', function (req, res) {
     admin_configured: Boolean(process.env.ADMIN_PASSWORD),
     storage: 'sqlite3',
     download_queue: getQueueStats(),
+    lookup_queue: getLookupQueue().getStats(),
+    throughput: {
+      workers: throughputConfig.WORKER_COUNT,
+      cache_ttl_sec: throughputConfig.CACHE_TTL_SEC,
+      user_rate_per_sec: throughputConfig.USER_RATE_PER_SEC,
+      max_queue: throughputConfig.MAX_QUEUE_SIZE,
+    },
+  });
+});
+
+app.get('/api/queue/status', async function (req, res) {
+  try {
+    const jobId = String(req.query.job_id || '').trim();
+    if (!jobId) {
+      return res.status(400).json({ error: 'Missing job_id parameter' });
+    }
+    const status = await getLookupQueue().getStatus(jobId);
+    if (status.status === 'not_found') {
+      return res.status(404).json(status);
+    }
+    res.json(status);
+  } catch (err) {
+    res.status(502).json({ error: err.message || 'Queue status failed' });
+  }
+});
+
+app.get('/api/queue', function (req, res) {
+  res.json({
+    ok: true,
+    stats: getLookupQueue().getStats(),
+    config: {
+      workers: throughputConfig.WORKER_COUNT,
+      max_queue: throughputConfig.MAX_QUEUE_SIZE,
+      cache_ttl_sec: throughputConfig.CACHE_TTL_SEC,
+      poll_interval_ms: throughputConfig.POLL_INTERVAL_MS,
+    },
   });
 });
 
@@ -190,19 +228,37 @@ async function handleDownload(req, res) {
       String(req.headers['x-omni-refresh'] || '').trim() === '1'
     );
     const clientIp = clientIpFromRequest(req);
+    let priority = parseInt(String(req.headers['x-omni-priority'] || '0'), 10) || 0;
+    if (/omni_return=1/i.test(String(req.headers.cookie || ''))) {
+      priority = Math.max(priority, throughputConfig.PRIORITY.RETURNING);
+    }
 
     const started = Date.now();
-    const result = await resolveDownloadWithCache(videoUrl, { refresh, clientIp });
-    const durationMs = result.durationMs != null ? result.durationMs : (Date.now() - started);
+    const queue = getLookupQueue();
+    const result = await queue.submit(videoUrl, { refresh, clientIp, priority });
+    const durationMs = Date.now() - started;
+
+    if (!result.immediate) {
+      res.setHeader('X-Omni-Queue', 'WAIT');
+      return res.status(202).json({
+        queued: true,
+        job_id: result.job_id,
+        position: result.position,
+        estimated_wait_sec: result.estimated_wait_sec,
+        message: result.message,
+        overflow: result.overflow,
+        poll_url: '/api/queue/status?job_id=' + result.job_id,
+      });
+    }
 
     if (!result.fromCache) {
       await trackApiCall({
         platform: 'api',
-        success: result.status >= 200 && result.status < 400 && result.data && !result.data.error,
-        status: result.status,
+        success: (result.status || 200) >= 200 && (result.status || 200) < 400 && result.data && !result.data.error,
+        status: result.status || 200,
         duration_ms: durationMs,
-        rateLimit: result.rateLimit,
-        message: result.status >= 400 ? 'RapidAPI error ' + result.status : 'RapidAPI metadata fetch',
+        rateLimit: null,
+        message: (result.status || 200) >= 400 ? 'Download API error ' + result.status : 'Download API metadata fetch',
       }).catch(function () {});
     }
 
@@ -217,12 +273,12 @@ async function handleDownload(req, res) {
     const data = result.data;
     if (!data || (typeof data === 'object' && !Object.keys(data).length)) {
       return res.status(result.status || 502).json({
-        error: 'Empty RapidAPI result',
-        message: 'RapidAPI returned no usable data for this URL.',
+        error: 'Empty API result',
+        message: 'Download API returned no usable data for this URL.',
       });
     }
 
-    res.status(result.status).json(data);
+    res.status(result.status || 200).json(data);
   } catch (err) {
     console.error('[download]', err);
     await trackApiCall({ platform: 'api', success: false, status: 502, message: err.message }).catch(function () {});
@@ -251,11 +307,47 @@ app.get('/api/stream', async function (req, res) {
     const filename = String(req.query.name || 'video.mp4').trim() || 'video.mp4';
     const expectedSize = parseInt(String(req.query.size || '0'), 10) || 0;
     const isAudio = String(req.query.audio || '') === '1';
+    const forceYtdlp = String(req.query.ytdlp || '') === '1';
 
     if (!mediaUrl) return res.status(400).json({ error: 'Missing url parameter' });
 
-    const ytdlpSource = pageUrl || (isVideoPageUrl(mediaUrl) ? mediaUrl : '');
-    if (ytdlpSource) {
+    async function relayCdnToClient(cdnUrl) {
+      const headers = upstreamHeaders(cdnUrl);
+      let upstream = await fetch(cdnUrl, { headers: headers });
+      if (!upstream.ok && (upstream.status === 403 || upstream.status === 401)) {
+        upstream = await fetch(cdnUrl, {
+          headers: Object.assign({}, headers, {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            Accept: 'video/mp4,video/*,*/*;q=0.8',
+          }),
+        });
+      }
+      if (!upstream.ok) return false;
+
+      const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
+      const safeName = filename.replace(/"/g, '');
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', 'attachment; filename="' + safeName + '"');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      const contentLength = upstream.headers.get('content-length');
+      if (contentLength) {
+        res.setHeader('Content-Length', contentLength);
+      } else if (expectedSize > 0) {
+        res.setHeader('Content-Length', String(expectedSize));
+      }
+
+      if (upstream.body) {
+        const nodeStream = Readable.fromWeb(upstream.body);
+        await pipeline(nodeStream, res);
+        return true;
+      }
+
+      const buffer = Buffer.from(await upstream.arrayBuffer());
+      res.send(buffer);
+      return true;
+    }
+
+    async function relayYtdlpToClient(ytdlpSource) {
       const safeName = filename.replace(/"/g, '');
       const contentType = isAudio ? 'audio/mpeg' : 'video/mp4';
       let filePath;
@@ -271,10 +363,11 @@ app.get('/api/stream', async function (req, res) {
         if (status === 503) {
           res.setHeader('Retry-After', String(queueErr.retryAfter || 15));
         }
-        return res.status(status).json({
+        res.status(status).json({
           error: queueErr.message || 'Download queue error',
           message: queueErr.message || 'Server busy — try again shortly.',
         });
+        return;
       }
       try {
         const stat = fs.statSync(filePath);
@@ -289,49 +382,32 @@ app.get('/api/stream', async function (req, res) {
           fs.rmdirSync(tmpDir);
         } catch (cleanupErr) { /* ignore */ }
       }
+    }
+
+    const directCdn = mediaUrl && !isVideoPageUrl(mediaUrl);
+    const ytdlpSource = pageUrl || (isVideoPageUrl(mediaUrl) ? mediaUrl : '');
+
+    if (!forceYtdlp && directCdn) {
+      const relayed = await relayCdnToClient(mediaUrl);
+      if (relayed) return;
+    }
+
+    if (forceYtdlp && ytdlpSource) {
+      await relayYtdlpToClient(ytdlpSource);
       return;
     }
 
-    const headers = upstreamHeaders(mediaUrl);
-    let upstream = await fetch(mediaUrl, { headers: headers });
-    if (!upstream.ok && (upstream.status === 403 || upstream.status === 401)) {
-      upstream = await fetch(mediaUrl, {
-        headers: Object.assign({}, headers, {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          Accept: 'video/mp4,video/*,*/*;q=0.8',
-        }),
-      });
-    }
-    if (!upstream.ok) {
-      if (upstream.status === 403 || upstream.status === 401) {
-        return res.status(403).json({
-          error: 'CDN blocked relay',
-          message: 'Download link expired or blocked by the platform CDN. Click Download again to refresh the link.',
-        });
-      }
-      return res.status(upstream.status).json({ error: 'Upstream HTTP ' + upstream.status });
-    }
-
-    const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
-    const safeName = filename.replace(/"/g, '');
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', 'attachment; filename="' + safeName + '"');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    const contentLength = upstream.headers.get('content-length');
-    if (contentLength) {
-      res.setHeader('Content-Length', contentLength);
-    } else if (expectedSize > 0) {
-      res.setHeader('Content-Length', String(expectedSize));
-    }
-
-    if (upstream.body) {
-      const nodeStream = Readable.fromWeb(upstream.body);
-      await pipeline(nodeStream, res);
+    if (ytdlpSource) {
+      await relayYtdlpToClient(ytdlpSource);
       return;
     }
 
-    const buffer = Buffer.from(await upstream.arrayBuffer());
-    res.send(buffer);
+    if (directCdn) {
+      const relayed = await relayCdnToClient(mediaUrl);
+      if (relayed) return;
+    }
+
+    return res.status(502).json({ error: 'No stream source available' });
   } catch (err) {
     if (!res.headersSent) {
       res.status(502).json({ error: 'Stream error: ' + err.message });
