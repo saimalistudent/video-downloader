@@ -1,0 +1,24 @@
+# ═══════════════════════════════════════════════════════════
+# NETLIFY ENV — OMNI WEBSITE (omnidownloader.netlify.app)
+# ═══════════════════════════════════════════════════════════
+
+# DELETE these (purani RapidAPI — ab mat rakho):
+# RAPIDAPI_KEY
+# DOWNLOAD_API_KEY
+
+# OPTIONAL — sirf tab jab same-origin proxy use ho (ab direct API prefer hoti hai):
+# OMNI_BACKEND_URL=https://spontaneous-salamander-418289.netlify.app
+# OMNI_API_TOKEN=e2675cdba8f91034
+
+# REQUIRED — Admin panel (/admin)
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=ApnaStrongPassword123!
+ADMIN_JWT_SECRET=omni_jwt_secret_change_me_2026
+SESSION_SECRET=omni_session_secret_change_me_2026
+
+DOMAIN_NAME=omnidownloader.netlify.app
+OMNI_PLAN_TIER=free
+
+# API connect — api.config.json file mein (redeploy ke baad live):
+#   backend_url = https://spontaneous-salamander-418289.netlify.app
+#   api_token   = (API site wala OMNI_API_TOKEN)
