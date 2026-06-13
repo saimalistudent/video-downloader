@@ -2895,14 +2895,7 @@
         return false;
       }
 
-      var externalBase = await loadBackendConfigUrl();
-      if (externalBase && await probeHealth(externalBase + '/api/health')) {
-        applyApiBase(externalBase, { fullApi: true });
-        if (banner) banner.classList.add('hidden');
-        console.info('[Omni] External API backend', externalBase);
-        return true;
-      }
-
+      await loadBackendConfigUrl();
       applyApiBase('', { fullApi: true });
 
       var healthOk = await probeHealth('/api/health');
@@ -2915,7 +2908,7 @@
       }
 
       if (banner) banner.classList.add('hidden');
-      console.info('[Omni] Same-origin API', healthOk ? '(health ok)' : '(function paths)');
+      console.info('[Omni] Same-origin API only', healthOk ? '(health ok)' : '(function paths)');
       return true;
     }
 

@@ -2,7 +2,7 @@ function corsHeaders(extra) {
   return {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Omni-Token, X-Omni-Priority, X-Omni-Refresh',
     ...(extra || {}),
   };
 }
