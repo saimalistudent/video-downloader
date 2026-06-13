@@ -20,7 +20,7 @@ exports.handler = async (event) => {
     platform: 'netlify',
     mode: 'omni-ytdlp',
     platforms: ['tiktok', 'instagram', 'facebook', 'youtube'],
-    api_configured: hasExternalBackend(),
+    api_configured: hasExternalBackend() && Boolean(getBackendConfig().token),
     download_api: hasExternalBackend(),
     backend_url: backend.url || null,
     lookup_queue: getLookupQueue().getStats(),

@@ -8,6 +8,7 @@ const {
   invalidateCachedLink,
   isSuccessfulApiPayload,
   isQuotaExceeded,
+  isTerminalApiStatus,
   checkUserRateLimit,
   getRedis,
 } = require('./link-cache');
@@ -114,7 +115,9 @@ class LookupQueueManager {
     this.jobs.set(jobId, job);
     this.urlJobs.set(urlKey, jobId);
     this.insertByPriority(jobId, priority);
-    await this.syncQueueToRedis();
+    if (!isServerlessRuntime()) {
+      await this.syncQueueToRedis();
+    }
     this.updatePositions();
 
     const refreshed = this.jobs.get(jobId);
@@ -131,10 +134,12 @@ class LookupQueueManager {
         };
       }
       if (finished && finished.status === 'failed') {
+        const errData = finished.error || { error: 'Lookup failed' };
+        const errStatus = errData.error === true || errData.message ? 403 : 502;
         return {
           immediate: true,
-          status: 502,
-          data: finished.error || { error: 'Lookup failed' },
+          status: errStatus,
+          data: errData,
         };
       }
     } else {
@@ -248,6 +253,7 @@ class LookupQueueManager {
   }
 
   async persistJob(job) {
+    if (isServerlessRuntime()) return;
     const redis = getRedis();
     if (!redis) return;
     try {
@@ -321,11 +327,12 @@ class LookupQueueManager {
   async executeLookup(job) {
     const { proxyDownload } = require('./api-proxy');
     let lastPayload = null;
+    const maxAttempts = isServerlessRuntime() ? 1 : config.WORKER_RETRIES;
 
-    for (let attempt = 0; attempt < config.WORKER_RETRIES; attempt += 1) {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       job.retries = attempt + 1;
       job.message = attempt > 0 ? ('Retrying… attempt ' + (attempt + 1)) : 'Fetching video info…';
-      await this.persistJob(job);
+      if (!isServerlessRuntime()) await this.persistJob(job);
 
       try {
         const { status, data, rateLimit } = await proxyDownload(job.videoUrl);
@@ -337,7 +344,15 @@ class LookupQueueManager {
           job.result = { status: status, data: data, rateLimit: rateLimit };
           job.message = 'Ready!';
           this.urlJobs.delete(job.videoUrl);
-          await this.persistJob(job);
+          if (!isServerlessRuntime()) await this.persistJob(job);
+          return;
+        }
+
+        if (isTerminalApiStatus(status, data)) {
+          job.status = 'failed';
+          job.error = data || { message: 'Request failed' };
+          this.urlJobs.delete(job.videoUrl);
+          if (!isServerlessRuntime()) await this.persistJob(job);
           return;
         }
 
@@ -349,7 +364,7 @@ class LookupQueueManager {
             job.result = { status: cached.status, data: cached.data, fromCache: true };
             job.message = 'Ready from cache!';
             this.urlJobs.delete(job.videoUrl);
-            await this.persistJob(job);
+            if (!isServerlessRuntime()) await this.persistJob(job);
             return;
           }
         }
@@ -357,7 +372,7 @@ class LookupQueueManager {
         lastPayload = { status: 502, data: { error: err.message } };
       }
 
-      if (attempt < config.WORKER_RETRIES - 1) {
+      if (attempt < maxAttempts - 1) {
         await sleep(1200 * (attempt + 1));
       }
     }
@@ -367,7 +382,7 @@ class LookupQueueManager {
       ? lastPayload.data
       : { message: 'Lookup failed after retries' };
     this.urlJobs.delete(job.videoUrl);
-    await this.persistJob(job);
+    if (!isServerlessRuntime()) await this.persistJob(job);
   }
 
   async tryFastComplete(jobId, maxWaitMs) {

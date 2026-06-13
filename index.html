@@ -4848,7 +4848,10 @@
         if (isLocalDev()) {
           return 'API server not running — open terminal, run: npm start  then open http://127.0.0.1:8080';
         }
-        return 'Server unreachable — refresh the page and try again. If this keeps happening, wait a minute and retry.';
+        return 'Request timed out or server unreachable — wait a moment and try again.';
+      }
+      if (error && /abort|timeout|timed out/i.test(error.message || '')) {
+        return 'Server took too long — please try again in a moment.';
       }
       return error.message || 'Failed to fetch video. Please try again.';
     }
@@ -4867,6 +4870,9 @@
 
       try {
         var parsed = JSON.parse(text);
+        if (parsed && parsed.errorMessage && /timed out|timeout/i.test(String(parsed.errorMessage))) {
+          throw new Error('Server took too long — please try again in a moment.');
+        }
         if (response.status === 404 && parsed && parsed.status !== 'not_found') {
           throw new Error(
             'API not found (404). Do not use Netlify Drop — run DEPLOY-NETLIFY.bat or connect GitHub. See NETLIFY_DEPLOY.md.'

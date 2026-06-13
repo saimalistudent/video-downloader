@@ -94,16 +94,41 @@ function hasExternalBackend() {
   return Boolean(getBackendConfig().url);
 }
 
+function isServerlessRuntime() {
+  return Boolean(
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.NETLIFY ||
+    process.env.VERCEL
+  );
+}
+
+function getUpstreamTimeoutMs() {
+  return isServerlessRuntime() ? 18000 : 120000;
+}
+
 function ensureApiKey() {
-  if (hasExternalBackend()) return { ok: true, backend: true };
-  return {
-    ok: false,
-    error: {
-      error: 'Download API not configured',
-      message: 'Set OMNI_BACKEND_URL and OMNI_API_TOKEN in Netlify env or api.config.json, then redeploy.',
-      api_configured: false,
-    },
-  };
+  const { url, token } = getBackendConfig();
+  if (!url) {
+    return {
+      ok: false,
+      error: {
+        error: 'Download API not configured',
+        message: 'Set OMNI_BACKEND_URL and OMNI_API_TOKEN in Netlify env or api.config.json, then redeploy.',
+        api_configured: false,
+      },
+    };
+  }
+  if (!token) {
+    return {
+      ok: false,
+      error: {
+        error: 'Download API token missing',
+        message: 'Set OMNI_API_TOKEN in Netlify Environment variables, then redeploy.',
+        api_configured: false,
+      },
+    };
+  }
+  return { ok: true, backend: true };
 }
 
 function normalizeVideoUrl(videoUrl) {
@@ -205,7 +230,7 @@ async function upstreamExternalBackend(videoUrl) {
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(function () { controller.abort(); }, 120000);
+    const timeoutId = setTimeout(function () { controller.abort(); }, getUpstreamTimeoutMs());
     const response = await fetch(url + '/api/download', {
       method: 'POST',
       headers: headers,
@@ -248,11 +273,12 @@ async function upstreamDownload(videoUrl) {
   };
 }
 
-async function proxyDownload(videoUrl, retries = 3) {
+async function proxyDownload(videoUrl, retries) {
+  const maxRetries = retries != null ? retries : (isServerlessRuntime() ? 1 : 3);
   let lastStatus = 502;
   let lastData = { error: 'Download failed' };
 
-  for (let attempt = 0; attempt < retries; attempt += 1) {
+  for (let attempt = 0; attempt < maxRetries; attempt += 1) {
     try {
       const { status, data } = await upstreamDownload(videoUrl);
       lastStatus = status;
@@ -271,7 +297,7 @@ async function proxyDownload(videoUrl, retries = 3) {
       lastData = { error: `Network error: ${err.message}` };
     }
 
-    if (attempt < retries - 1) {
+    if (attempt < maxRetries - 1) {
       await sleep(1500 * (attempt + 1));
     }
   }

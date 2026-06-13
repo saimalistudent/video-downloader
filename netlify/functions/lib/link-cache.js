@@ -17,6 +17,26 @@ const memRateSec = new Map();
 const memRateMin = new Map();
 const inflightLookups = new Map();
 let redisClient = null;
+const REDIS_OP_TIMEOUT_MS = parseInt(process.env.REDIS_OP_TIMEOUT_MS || '2500', 10);
+
+async function withRedisTimeout(label, promise) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise(function (_, reject) {
+        timer = setTimeout(function () {
+          reject(new Error('redis timeout'));
+        }, REDIS_OP_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (err) {
+    console.warn('[link-cache]', label + ':', err.message);
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 function cleanEnv(value) {
   let v = String(value || '').trim();
@@ -79,14 +99,16 @@ async function getCachedLink(videoUrl) {
   const key = cacheKeyForUrl(videoUrl);
   const redis = getRedis();
   if (redis) {
-    try {
-      const raw = await redis.get(key);
-      if (!raw) return null;
-      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      if (!parsed || !parsed.data) return null;
-      return { status: parsed.status || 200, data: parsed.data };
-    } catch (err) {
-      console.warn('[link-cache] get failed:', err.message);
+    const raw = await withRedisTimeout('get', redis.get(key));
+    if (raw) {
+      try {
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (parsed && parsed.data) {
+          return { status: parsed.status || 200, data: parsed.data };
+        }
+      } catch (err) {
+        console.warn('[link-cache] get parse failed:', err.message);
+      }
     }
   }
   const mem = memCacheGet(key);
@@ -103,12 +125,8 @@ async function setCachedLink(videoUrl, status, data) {
   const ttl = DEFAULT_CACHE_TTL_SEC;
   const redis = getRedis();
   if (redis) {
-    try {
-      await redis.set(key, JSON.stringify(payload), { ex: ttl });
-      return;
-    } catch (err) {
-      console.warn('[link-cache] set failed:', err.message);
-    }
+    const ok = await withRedisTimeout('set', redis.set(key, JSON.stringify(payload), { ex: ttl }));
+    if (ok !== null) return;
   }
   memCacheSet(key, payload, ttl);
 }
@@ -117,11 +135,7 @@ async function invalidateCachedLink(videoUrl) {
   const key = cacheKeyForUrl(videoUrl);
   const redis = getRedis();
   if (redis) {
-    try {
-      await redis.del(key);
-    } catch (err) {
-      console.warn('[link-cache] del failed:', err.message);
-    }
+    await withRedisTimeout('del', redis.del(key));
   }
   memCache.delete(key);
 }
@@ -173,24 +187,24 @@ async function checkUserRateLimit(clientIp) {
   const minSlot = Math.floor(Date.now() / 60000);
 
   if (redis) {
-    try {
-      const secKey = RATE_PREFIX + 'sec:' + ip + ':' + secSlot;
-      const secCount = await redis.incr(secKey);
-      if (secCount === 1) await redis.expire(secKey, 3);
+    const secKey = RATE_PREFIX + 'sec:' + ip + ':' + secSlot;
+    const secCount = await withRedisTimeout('incr-sec', redis.incr(secKey));
+    if (secCount != null) {
+      if (secCount === 1) await withRedisTimeout('expire-sec', redis.expire(secKey, 3));
       if (secCount > RATE_PER_SEC) {
         return { ok: false, remaining: 0, retryAfter: 1, reason: 'per_second' };
       }
 
       const minKey = RATE_PREFIX + 'min:' + ip + ':' + minSlot;
-      const minCount = await redis.incr(minKey);
-      if (minCount === 1) await redis.expire(minKey, 120);
-      if (minCount > RATE_PER_MIN) {
-        return { ok: false, remaining: 0, retryAfter: 60, reason: 'per_minute' };
+      const minCount = await withRedisTimeout('incr-min', redis.incr(minKey));
+      if (minCount != null) {
+        if (minCount === 1) await withRedisTimeout('expire-min', redis.expire(minKey, 120));
+        if (minCount > RATE_PER_MIN) {
+          return { ok: false, remaining: 0, retryAfter: 60, reason: 'per_minute' };
+        }
       }
 
       return { ok: true, remaining: RATE_PER_SEC - secCount };
-    } catch (err) {
-      console.warn('[link-cache] user rate limit failed:', err.message);
     }
   }
 
@@ -223,6 +237,12 @@ function isQuotaExceeded(status, data) {
   if (status === 429) return true;
   const msg = String((data && (data.message || data.error)) || '').toLowerCase();
   return /quota|exceeded|monthly.*limit|upgrade your plan/i.test(msg);
+}
+
+function isTerminalApiStatus(status, data) {
+  if (status === 400 || status === 401 || status === 403 || status === 404) return true;
+  const msg = String((data && (data.message || data.error)) || '').toLowerCase();
+  return /unauthorized|invalid.*token|private|restricted|blocked|not found/i.test(msg);
 }
 
 async function resolveDownloadWithCache(videoUrl, options) {
@@ -258,6 +278,7 @@ module.exports = {
   clientIpFromRequest,
   isSuccessfulApiPayload,
   isQuotaExceeded,
+  isTerminalApiStatus,
   getRedis,
   CACHE_TTL_SEC: DEFAULT_CACHE_TTL_SEC,
   RATE_PER_SEC: RATE_PER_SEC,
