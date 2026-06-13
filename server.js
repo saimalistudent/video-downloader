@@ -316,7 +316,7 @@ app.get('/api/stream', async function (req, res) {
     if (!mediaUrl) return res.status(400).json({ error: 'Missing url parameter' });
 
     async function relayCdnToClient(cdnUrl) {
-      const headers = upstreamHeaders(cdnUrl);
+      const headers = upstreamHeaders(cdnUrl, pageUrl || mediaUrl);
       let upstream = await fetch(cdnUrl, { headers: headers, redirect: 'follow' });
       if (!upstream.ok && (upstream.status === 403 || upstream.status === 401)) {
         upstream = await fetch(cdnUrl, {

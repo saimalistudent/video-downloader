@@ -3,6 +3,12 @@
   "provider": "omni-ytdlp",
   "platforms": ["tiktok", "instagram", "facebook", "youtube"],
   "backend_url": "https://spontaneous-salamander-418289.netlify.app",
+  "backends": {
+    "tiktok": "https://spontaneous-salamander-418289.netlify.app",
+    "instagram": "https://spontaneous-salamander-418289.netlify.app",
+    "facebook": "https://spontaneous-salamander-418289.netlify.app",
+    "youtube": "https://spontaneous-salamander-418289.netlify.app"
+  },
   "api_token": "e2675cdba8f91034",
-  "note": "api_token must match OMNI_API_TOKEN on the API Netlify site"
+  "note": "Set OMNI_BACKEND_TIKTOK / INSTAGRAM / FACEBOOK / YOUTUBE in Netlify env for separate API hosts. api_token via OMNI_API_TOKEN only."
 }

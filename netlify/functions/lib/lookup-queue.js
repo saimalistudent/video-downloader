@@ -28,11 +28,13 @@ function newJobId() {
 
 function estimateWaitSec(position) {
   const pos = Math.max(1, position);
+  if (pos === 1) return 1;
   const batches = Math.ceil(pos / Math.max(1, config.WORKER_COUNT));
-  return Math.max(1, Math.ceil(batches * (config.AVG_LOOKUP_MS / 1000)));
+  return Math.max(2, Math.ceil(batches * (config.AVG_LOOKUP_MS / 1000)));
 }
 
 function queueMessage(position, waitSec) {
+  if (position === 1) return 'Fetching video info…';
   if (position > config.MAX_QUEUE_SIZE) {
     const mins = Math.max(1, Math.ceil(waitSec / 60));
     return 'You are #' + position + ' — high traffic, wait ~' + mins + ' min';
@@ -82,9 +84,18 @@ class LookupQueueManager {
 
     const existingId = this.urlJobs.get(urlKey);
     if (!refresh && existingId) {
-      const existing = await this.getJobRecord(existingId);
+      const existing = this.jobs.get(existingId) || await this.getJobRecord(existingId);
       if (existing && (existing.status === 'queued' || existing.status === 'processing')) {
-        return this.buildQueuedResponse(existing);
+        const waited = await this.waitForJob(existingId, config.FAST_COMPLETE_MS);
+        if (waited) return waited;
+        if (existing.status === 'done' && existing.result) {
+          return {
+            immediate: true,
+            status: existing.result.status || 200,
+            data: existing.result.data,
+            fromCache: Boolean(existing.fromCache),
+          };
+        }
       }
     }
 
@@ -111,16 +122,17 @@ class LookupQueueManager {
       error: null,
     };
 
-    await this.persistJob(job);
+    this.persistJob(job).catch(function () {});
     this.jobs.set(jobId, job);
     this.urlJobs.set(urlKey, jobId);
     this.insertByPriority(jobId, priority);
     if (!isServerlessRuntime()) {
-      await this.syncQueueToRedis();
+      this.syncQueueToRedis().catch(function () {});
     }
     this.updatePositions();
 
     const refreshed = this.jobs.get(jobId);
+    const position = this.getPosition(jobId) || 1;
 
     if (isServerlessRuntime()) {
       await this.runWorker(jobId);
@@ -144,7 +156,10 @@ class LookupQueueManager {
       }
     } else {
       this.pumpWorkers();
-      const maybeDone = await this.tryFastComplete(jobId, 2500);
+      const waitMs = position <= 1
+        ? config.FAST_COMPLETE_MS
+        : Math.min(30000, position * 2500);
+      const maybeDone = await this.tryFastComplete(jobId, waitMs);
       if (maybeDone) return maybeDone;
     }
 
@@ -327,7 +342,7 @@ class LookupQueueManager {
   async executeLookup(job) {
     const { proxyDownload } = require('./api-proxy');
     let lastPayload = null;
-    const maxAttempts = isServerlessRuntime() ? 1 : config.WORKER_RETRIES;
+    const maxAttempts = config.WORKER_RETRIES;
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       job.retries = attempt + 1;
@@ -373,7 +388,7 @@ class LookupQueueManager {
       }
 
       if (attempt < maxAttempts - 1) {
-        await sleep(1200 * (attempt + 1));
+        await sleep(600 * (attempt + 1));
       }
     }
 
@@ -385,10 +400,14 @@ class LookupQueueManager {
     if (!isServerlessRuntime()) await this.persistJob(job);
   }
 
+  async waitForJob(jobId, maxWaitMs) {
+    return this.tryFastComplete(jobId, maxWaitMs);
+  }
+
   async tryFastComplete(jobId, maxWaitMs) {
     const started = Date.now();
     while (Date.now() - started < maxWaitMs) {
-      const job = this.jobs.get(jobId);
+      const job = this.jobs.get(jobId) || await this.getJobRecord(jobId);
       if (!job) break;
       if (job.status === 'done' && job.result) {
         return {
@@ -405,7 +424,7 @@ class LookupQueueManager {
           data: job.error || { error: 'Lookup failed' },
         };
       }
-      await sleep(150);
+      await sleep(100);
     }
     return null;
   }

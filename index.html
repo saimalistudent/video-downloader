@@ -3363,7 +3363,7 @@
       document.getElementById('loader-' + platform).classList.remove('hidden');
       document.getElementById('result-' + platform).classList.add('hidden');
       stopLoaderStages(platform);
-      setLoaderProgress(platform, 8);
+      setLoaderProgress(platform, 12);
       setLoaderMessage(platform, 'Fetching video info…');
     }
 
@@ -4645,7 +4645,7 @@
       return videoData;
     }
 
-    var LOOKUP_POLL_MS = 2000;
+    var LOOKUP_POLL_MS = 600;
     var lookupPollTimer = null;
 
     function markReturningUser() {
@@ -4707,28 +4707,52 @@
       setTimeout(function () { overlay.classList.add('hidden'); }, 350);
     }
 
-    async function pollLookupJob(initial) {
-      showLookupQueueOverlay(initial.position, initial.estimated_wait_sec, initial.message);
+    function detectPlatformFromUrl(url) {
+      var u = String(url || '').toLowerCase();
+      if (/tiktok\.com|vm\.tiktok|vt\.tiktok/.test(u)) return 'tiktok';
+      if (/instagram\.com|instagr\.am/.test(u)) return 'instagram';
+      if (/facebook\.com|fb\.watch|fb\.com/.test(u)) return 'facebook';
+      if (/youtube\.com|youtu\.be/.test(u)) return 'youtube';
+      return 'other';
+    }
+
+    async function pollLookupJob(initial, platform) {
+      var useOverlay = (initial.position || 1) > 1;
+      if (useOverlay) {
+        showLookupQueueOverlay(initial.position, initial.estimated_wait_sec, initial.message);
+      } else if (platform) {
+        setLoaderMessage(platform, 'Fetching video info…');
+        setLoaderProgress(platform, 35);
+      }
       var jobId = initial.job_id;
       var pollUrl = (API.queueStatus || '/api/queue/status') + '?job_id=' + encodeURIComponent(jobId);
 
       while (true) {
         var statusRes = await fetch(pollUrl, { cache: 'no-store' });
         var status = await parseJsonResponse(statusRes);
-        updateLookupQueueOverlay(status);
 
         if (status.status === 'done' && status.result && status.result.data) {
-          hideLookupQueueOverlay();
+          if (useOverlay) hideLookupQueueOverlay();
           markReturningUser();
           return { data: status.result.data };
         }
         if (status.status === 'failed') {
-          hideLookupQueueOverlay();
+          if (useOverlay) hideLookupQueueOverlay();
           throw new Error(extractApiError(status.error));
         }
         if (status.status === 'not_found') {
-          hideLookupQueueOverlay();
+          if (useOverlay) hideLookupQueueOverlay();
           throw new Error('Queue job expired — please try again.');
+        }
+        if (!useOverlay && platform) {
+          if (status.status === 'processing') {
+            setLoaderMessage(platform, 'Extracting video from CDN…');
+            setLoaderProgress(platform, 58);
+          } else {
+            setLoaderProgress(platform, 44);
+          }
+        } else if (useOverlay) {
+          updateLookupQueueOverlay(status);
         }
         await sleep(LOOKUP_POLL_MS);
       }
@@ -4742,10 +4766,11 @@
       var headers = apiAuthHeaders();
       if (options.refresh) headers['X-Omni-Refresh'] = '1';
       headers['X-Omni-Priority'] = String(getLookupPriority());
+      headers['X-Omni-Platform'] = detectPlatformFromUrl(videoUrl);
       return fetch(API.download, {
         method: 'POST',
         headers: headers,
-        body: JSON.stringify({ url: videoUrl, refresh: options.refresh === true })
+        body: JSON.stringify({ url: videoUrl, refresh: options.refresh === true, platform: detectPlatformFromUrl(videoUrl) })
       });
     }
 
@@ -4842,7 +4867,7 @@
         var data = await parseJsonResponse(response);
 
         if (response.status === 202 && data && data.job_id) {
-          return await pollLookupJob(data);
+          return await pollLookupJob(data, options.platform);
         }
 
         if (response.status === 429) {
@@ -4952,9 +4977,9 @@
           return;
         }
 
-        setLoaderMessage(platform, 'Contacting download API…');
-        setLoaderProgress(platform, 22);
-        var result = await fetchVideoFromApi(url);
+        setLoaderMessage(platform, 'Fetching video info…');
+        setLoaderProgress(platform, 28);
+        var result = await fetchVideoFromApi(url, { platform: platform });
         var data = result.data;
 
         setLoaderMessage(platform, 'Parsing video details…');

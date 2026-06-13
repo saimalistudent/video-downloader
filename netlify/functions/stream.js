@@ -18,7 +18,7 @@ function isServerlessRuntime() {
 }
 
 async function relayCdnStream(mediaUrl, filename, expectedSize) {
-  const upstreamReqHeaders = upstreamHeaders(mediaUrl);
+  const upstreamReqHeaders = upstreamHeaders(mediaUrl, queryParam(event, 'page_url').trim() || mediaUrl);
   let upstream = await fetch(mediaUrl, { headers: upstreamReqHeaders, redirect: 'follow' });
 
   if (!upstream.ok && (upstream.status === 403 || upstream.status === 401)) {

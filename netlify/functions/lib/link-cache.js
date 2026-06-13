@@ -17,7 +17,14 @@ const memRateSec = new Map();
 const memRateMin = new Map();
 const inflightLookups = new Map();
 let redisClient = null;
-const REDIS_OP_TIMEOUT_MS = parseInt(process.env.REDIS_OP_TIMEOUT_MS || '2500', 10);
+const REDIS_OP_TIMEOUT_MS = parseInt(process.env.REDIS_OP_TIMEOUT_MS || '800', 10);
+
+function disableRedis(reason) {
+  if (redisClient !== false && redisClient !== null) {
+    console.warn('[link-cache] Redis disabled:', reason || 'unknown');
+  }
+  redisClient = false;
+}
 
 async function withRedisTimeout(label, promise) {
   let timer;
@@ -31,7 +38,11 @@ async function withRedisTimeout(label, promise) {
       }),
     ]);
   } catch (err) {
-    console.warn('[link-cache]', label + ':', err.message);
+    const msg = err && err.message ? err.message : String(err);
+    if (/WRONGPASS|invalid username-password|NOAUTH|user is disabled/i.test(msg)) {
+      disableRedis(msg);
+    }
+    console.warn('[link-cache]', label + ':', msg);
     return null;
   } finally {
     if (timer) clearTimeout(timer);
@@ -59,6 +70,7 @@ function redisConfig() {
 }
 
 function getRedis() {
+  if (redisClient === false) return false;
   if (redisClient !== null) return redisClient;
   const cfg = redisConfig();
   if (!cfg) {
@@ -97,6 +109,10 @@ function memCacheSet(key, payload, ttlSec) {
 
 async function getCachedLink(videoUrl) {
   const key = cacheKeyForUrl(videoUrl);
+  const mem = memCacheGet(key);
+  if (mem && mem.data) {
+    return { status: mem.status || 200, data: mem.data };
+  }
   const redis = getRedis();
   if (redis) {
     const raw = await withRedisTimeout('get', redis.get(key));
@@ -104,6 +120,7 @@ async function getCachedLink(videoUrl) {
       try {
         const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
         if (parsed && parsed.data) {
+          memCacheSet(key, parsed, DEFAULT_CACHE_TTL_SEC);
           return { status: parsed.status || 200, data: parsed.data };
         }
       } catch (err) {
@@ -111,9 +128,7 @@ async function getCachedLink(videoUrl) {
       }
     }
   }
-  const mem = memCacheGet(key);
-  if (!mem || !mem.data) return null;
-  return { status: mem.status || 200, data: mem.data };
+  return null;
 }
 
 async function setCachedLink(videoUrl, status, data) {
