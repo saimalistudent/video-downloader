@@ -122,7 +122,7 @@ app.get('/api/queue/status', async function (req, res) {
     }
     const status = await getLookupQueue().getStatus(jobId);
     if (status.status === 'not_found') {
-      return res.status(404).json(status);
+      return res.status(200).json(status);
     }
     res.json(status);
   } catch (err) {

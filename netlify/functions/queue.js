@@ -16,7 +16,7 @@ exports.handler = async (event) => {
     try {
       const status = await getLookupQueue().getStatus(jobId);
       if (status.status === 'not_found') {
-        return jsonResponse(404, status);
+        return jsonResponse(200, status);
       }
       return jsonResponse(200, status);
     } catch (err) {

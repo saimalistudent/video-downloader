@@ -39,6 +39,14 @@ function queueMessage(position, waitSec) {
   return 'You are #' + position + ' in line — ~' + waitSec + ' sec';
 }
 
+function isServerlessRuntime() {
+  return Boolean(
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.NETLIFY ||
+    process.env.VERCEL
+  );
+}
+
 class LookupQueueManager {
   constructor() {
     this.jobs = new Map();
@@ -110,10 +118,30 @@ class LookupQueueManager {
     this.updatePositions();
 
     const refreshed = this.jobs.get(jobId);
-    this.pumpWorkers();
 
-    const maybeDone = await this.tryFastComplete(jobId, 2500);
-    if (maybeDone) return maybeDone;
+    if (isServerlessRuntime()) {
+      await this.runWorker(jobId);
+      const finished = this.jobs.get(jobId) || await this.getJobRecord(jobId);
+      if (finished && finished.status === 'done' && finished.result) {
+        return {
+          immediate: true,
+          status: finished.result.status || 200,
+          data: finished.result.data,
+          fromCache: Boolean(finished.fromCache),
+        };
+      }
+      if (finished && finished.status === 'failed') {
+        return {
+          immediate: true,
+          status: 502,
+          data: finished.error || { error: 'Lookup failed' },
+        };
+      }
+    } else {
+      this.pumpWorkers();
+      const maybeDone = await this.tryFastComplete(jobId, 2500);
+      if (maybeDone) return maybeDone;
+    }
 
     return this.buildQueuedResponse(refreshed || job);
   }
@@ -223,12 +251,22 @@ class LookupQueueManager {
     const redis = getRedis();
     if (!redis) return;
     try {
-      const payload = Object.assign({}, job, {
+      const payload = {
+        id: String(job.id || ''),
+        videoUrl: String(job.videoUrl || ''),
         refresh: job.refresh ? '1' : '0',
+        clientIp: String(job.clientIp || ''),
+        priority: String(parseInt(job.priority, 10) || 0),
+        status: String(job.status || ''),
+        position: String(parseInt(job.position, 10) || 0),
+        createdAt: String(parseInt(job.createdAt, 10) || Date.now()),
+        lastPollAt: String(parseInt(job.lastPollAt, 10) || Date.now()),
+        retries: String(parseInt(job.retries, 10) || 0),
         fromCache: job.fromCache ? '1' : '0',
+        message: String(job.message || ''),
         result: job.result ? JSON.stringify(job.result) : '',
         error: job.error ? JSON.stringify(job.error) : '',
-      });
+      };
       await redis.hset(JOB_PREFIX + job.id, payload);
       await redis.expire(JOB_PREFIX + job.id, Math.ceil(config.JOB_TTL_MS / 1000) + 120);
     } catch (err) {

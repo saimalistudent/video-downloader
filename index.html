@@ -4849,20 +4849,31 @@
     async function parseJsonResponse(response) {
       var text = await response.text();
 
-      if (response.status === 404) {
-        throw new Error(
-          'API not found (404). Do not use Netlify Drop — run DEPLOY-NETLIFY.bat or connect GitHub. See NETLIFY_DEPLOY.md.'
-        );
-      }
-
       if (!text || !text.trim()) {
+        if (response.status === 404) {
+          throw new Error(
+            'API not found (404). Do not use Netlify Drop — run DEPLOY-NETLIFY.bat or connect GitHub. See NETLIFY_DEPLOY.md.'
+          );
+        }
         throw new Error('Empty response (HTTP ' + response.status + '). Check Netlify function logs and OMNI download API config.');
       }
 
       try {
-        return JSON.parse(text);
+        var parsed = JSON.parse(text);
+        if (response.status === 404 && parsed && parsed.status !== 'not_found') {
+          throw new Error(
+            'API not found (404). Do not use Netlify Drop — run DEPLOY-NETLIFY.bat or connect GitHub. See NETLIFY_DEPLOY.md.'
+          );
+        }
+        return parsed;
       } catch (e) {
+        if (e.message && /API not found/i.test(e.message)) throw e;
         if (/<!DOCTYPE|<html/i.test(text)) {
+          if (response.status === 404) {
+            throw new Error(
+              'API not found (404). Do not use Netlify Drop — run DEPLOY-NETLIFY.bat or connect GitHub. See NETLIFY_DEPLOY.md.'
+            );
+          }
           throw new Error('Server misconfiguration — /api/download route not found. Redeploy to Vercel.');
         }
         throw new Error('Invalid response from server');
