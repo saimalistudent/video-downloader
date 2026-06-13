@@ -19,6 +19,10 @@ SESSION_SECRET=omni_session_secret_change_me_2026
 DOMAIN_NAME=omnidownloader.netlify.app
 OMNI_PLAN_TIER=free
 
+# Upstash Redis — link cache + admin stats (Netlify Environment variables)
+UPSTASH_REDIS_REST_URL=https://deciding-cheetah-116873.upstash.io
+UPSTASH_REDIS_REST_TOKEN=(set in Netlify dashboard — same as local .env)
+
 # API connect — api.config.json file mein (redeploy ke baad live):
 #   backend_url = https://spontaneous-salamander-418289.netlify.app
 #   api_token   = (API site wala OMNI_API_TOKEN)
