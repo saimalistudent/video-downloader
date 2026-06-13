@@ -3,6 +3,5 @@
   "provider": "omni-ytdlp",
   "platforms": ["tiktok", "instagram", "facebook", "youtube"],
   "backend_url": "https://spontaneous-salamander-418289.netlify.app",
-  "api_token": "e2675cdba8f91034",
-  "note": "Omni download API — all video metadata and streams go through this backend."
+  "note": "Omni download API — token via OMNI_API_TOKEN env on Netlify (not in git)."
 }

@@ -25,7 +25,7 @@ let apiConfigCache = null;
 
 const BUILTIN_BACKEND = {
   backend_url: 'https://spontaneous-salamander-418289.netlify.app',
-  api_token: 'e2675cdba8f91034',
+  api_token: '',
 };
 
 function findApiConfigPath() {
